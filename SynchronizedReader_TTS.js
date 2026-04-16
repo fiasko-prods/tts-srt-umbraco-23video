@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.21
+// Version: 1.22
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -20,14 +20,14 @@
 // │  Then paste your SRT content below LANGUAGE.   │
 // └─────────────────────────────────────────────────┘
 
-const LANGUAGE = window.SRT_LANGUAGE || 'da'; // set by Umbraco script block
+const LANGUAGE = window.SRT_LANGUAGE || 'da';
 
 // =====================================================
 // SUBTITLES — REPLACE WITH YOUR SRT CONTENT
 // Paste your .srt file content between the backticks
 // =====================================================
 
-const SUBTITLES_SRT = window.SRT_SUBTITLES || ''; // set by Umbraco script block
+const SUBTITLES_SRT = window.SRT_SUBTITLES || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -110,10 +110,10 @@ const LANGUAGE_CONFIGS = {
 
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
-if (window.videoSpeechReaderLoaded_v121) {
-    console.log('⚠️ Video Speech Reader v1.16 already loaded, skipping');
+if (window.videoSpeechReaderLoaded_v122) {
+    console.log('⚠️ Video Speech Reader v1.22 already loaded, skipping');
 } else {
-    window.videoSpeechReaderLoaded_v121 = true;
+    window.videoSpeechReaderLoaded_v122 = true;
     window.videoSpeechReaderLoaded = true;
 
 (function() {
@@ -133,10 +133,11 @@ if (window.videoSpeechReaderLoaded_v121) {
     let justSeeked           = false;
     let postSeekCooldown     = false;
     let lastKnownTime        = 0;
-    let ttsEnabled           = !isIOS; // iOS starts disabled — button tap is the audio unlock
+    let ttsEnabled           = !isIOS;
     let iosSpeakUntil        = 0;
+    // Desktop only: generation counter prevents stale onend from repeating
+    let speakGeneration      = 0;
 
-    // Volume levels: TTS active / TTS disabled
     const VOL_TTS_ON  = isIOS ? 30 : 10;
     const VOL_TTS_OFF = 100;
 
@@ -154,30 +155,28 @@ if (window.videoSpeechReaderLoaded_v121) {
     function checkVoiceWarning() {
         if (!CFG.voiceWarning) return;
         const voice = getVoice();
-        if (voice) return; // correct voice found — no warning needed
+        if (voice) return;
         const el = document.getElementById('tts-voice-warning');
         if (el) el.style.display = 'block';
+        // Disable TTS on desktop/Android if no matching voice found
+        if (!isIOS && ttsEnabled) {
+            ttsEnabled = false;
+            const icon  = document.getElementById('tts-bubble-icon');
+            const label = document.getElementById('tts-toggle-label');
+            if (icon)  { icon.style.opacity = '0.3'; icon.style.filter = 'grayscale(100%)'; }
+            if (label) { label.style.opacity = '0.45'; label.textContent = CFG.labelOff; }
+            setPlayerVolume(VOL_TTS_OFF);
+        }
     }
 
     function getVoice() {
         if (!availableVoices.length) return null;
-
-        // 1. Exact match: e.g. 'da-DK'
         let v = availableVoices.find(v => v.lang === CFG.lang);
-
-        // 2. Language prefix match: e.g. 'da' matches 'da-DK', 'da-XX'
         if (!v) v = availableVoices.find(v => v.lang.startsWith(CFG.langAlt + '-') || v.lang === CFG.langAlt);
-
-        // 3. Case-insensitive name match — Android voices often have names like
-        //    "Danish", "Dansk", or the lang code embedded in the voice name
         if (!v) v = availableVoices.find(v =>
             v.name.toLowerCase().includes(CFG.langAlt.toLowerCase()) ||
             v.name.toLowerCase().includes(CFG.lang.toLowerCase())
         );
-
-        // If no match found: return null — do NOT fall back to availableVoices[0].
-        // Setting utterance.lang alone is enough for Android's TTS engine to pick
-        // the right language. A wrong voice overrides the lang property entirely.
         return v || null;
     }
 
@@ -203,8 +202,8 @@ if (window.videoSpeechReaderLoaded_v121) {
 
     function cleanText(text) {
         return text
-            .replace(/^[\s\-]+/, '')    // remove leading hyphens/spaces (e.g. "- eller")
-            .replace(/\s*\-\s*$/, ',')  // trailing hyphen → comma (e.g. "målebånd -" → "målebånd,")
+            .replace(/^[\s\-]+/, '')
+            .replace(/\s*\-\s*$/, ',')
             .replace(/\.|!|\?/g, ',')
             .replace(/,{2,}/g, ',')
             .replace(/\s{2,}/g, ' ')
@@ -222,9 +221,58 @@ if (window.videoSpeechReaderLoaded_v121) {
         if (fastMode) rate = Math.min(rate * 1.25, 2.0);
         if (isIOS) rate = Math.max(rate * 0.95, 0.5);
 
-        if (isIOS && !isSeekedSubtitle && Date.now() < iosSpeakUntil) return;
+        // ── iOS path (unchanged from v1.21) ──────────────────────────────────
+        if (isIOS) {
+            if (!isSeekedSubtitle && Date.now() < iosSpeakUntil) return;
+            speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            const voice = getVoice();
+            if (voice) utterance.voice = voice;
+            utterance.lang   = CFG.lang;
+            utterance.rate   = rate;
+            utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
+            utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
+            const sub = subtitles[currentSubtitleIndex];
+            if (sub) {
+                const remainingSecs = Math.max(sub.endTime - lastKnownTime, 0.5);
+                iosSpeakUntil = Date.now() + (remainingSecs * 1000) + 500;
+            }
+            currentlySpeaking = true;
+            utterance.onstart = () => { currentlySpeaking = true; };
+            utterance.onend = () => {
+                currentlySpeaking = false;
+                if (isSeekedSubtitle) {
+                    justSeeked = false;
+                    postSeekCooldown = true;
+                    let idx = -1;
+                    for (let i = 0; i < subtitles.length; i++) {
+                        if (lastKnownTime >= subtitles[i].startTime &&
+                            lastKnownTime <= subtitles[i].endTime) { idx = i; break; }
+                    }
+                    if (idx >= 0 && idx !== currentSubtitleIndex) {
+                        currentSubtitleIndex = idx;
+                        postSeekCooldown = false;
+                        speak(subtitles[idx].text);
+                    }
+                }
+            };
+            utterance.onerror = () => {
+                currentlySpeaking = false;
+                justSeeked = false;
+                postSeekCooldown = false;
+            };
+            speechSynthesis.speak(utterance);
+            return;
+        }
 
-        speechSynthesis.cancel();
+        // ── Desktop / Android path ────────────────────────────────────────────
+        // Generation counter: prevents stale onend from re-speaking after cancel.
+        speakGeneration++;
+        const myGen = speakGeneration;
+        const spokenIdx = currentSubtitleIndex;
+
+        // Only cancel on seek — let normal utterances finish naturally
+        if (isSeekedSubtitle) speechSynthesis.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
         const voice = getVoice();
@@ -234,17 +282,10 @@ if (window.videoSpeechReaderLoaded_v121) {
         utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
         utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
 
-        if (isIOS) {
-            const sub = subtitles[currentSubtitleIndex];
-            if (sub) {
-                const remainingSecs = Math.max(sub.endTime - lastKnownTime, 0.5);
-                iosSpeakUntil = Date.now() + (remainingSecs * 1000) + 500;
-            }
-        }
-
         currentlySpeaking = true;
-        utterance.onstart = () => { currentlySpeaking = true; };
+        utterance.onstart = () => { if (myGen === speakGeneration) currentlySpeaking = true; };
         utterance.onend = () => {
+            if (myGen !== speakGeneration) return; // stale — ignore
             currentlySpeaking = false;
             if (isSeekedSubtitle) {
                 justSeeked = false;
@@ -259,9 +300,17 @@ if (window.videoSpeechReaderLoaded_v121) {
                     postSeekCooldown = false;
                     speak(subtitles[idx].text);
                 }
+            } else if (ttsEnabled && isVideoPlaying) {
+                // Chain to next subtitle if updateSubtitle advanced the index while we spoke
+                const sub = subtitles[currentSubtitleIndex];
+                if (sub && currentSubtitleIndex !== spokenIdx &&
+                    lastKnownTime >= sub.startTime && lastKnownTime <= sub.endTime) {
+                    speak(subtitles[currentSubtitleIndex].text);
+                }
             }
         };
-        utterance.onerror = () => {
+        utterance.onerror = (e) => {
+            if (myGen !== speakGeneration) return;
             currentlySpeaking = false;
             justSeeked = false;
             postSeekCooldown = false;
@@ -302,6 +351,8 @@ if (window.videoSpeechReaderLoaded_v121) {
         if (activeIndex >= 0) {
             updateDisplay(activeIndex);
             if (isVideoPlaying && ttsEnabled) {
+
+                // ── iOS path (unchanged from v1.21) ──────────────────────────
                 if (isIOS) {
                     if (isSpeaking) {
                         currentSubtitleIndex = activeIndex;
@@ -311,19 +362,27 @@ if (window.videoSpeechReaderLoaded_v121) {
                     }
                     return;
                 }
+
+                // ── Desktop / Android path ────────────────────────────────────
                 const alreadySeen = activeIndex === currentSubtitleIndex;
                 if (alreadySeen) return;
                 const jumped = !postSeekCooldown &&
                                currentSubtitleIndex >= 0 &&
                                Math.abs(activeIndex - currentSubtitleIndex) > 1;
                 if (jumped) {
+                    // Seek: set index first then speak
+                    currentSubtitleIndex = activeIndex;
                     justSeeked = true;
                     speak(subtitles[activeIndex].text, true);
+                } else if (currentlySpeaking) {
+                    // Mid-sentence: sync index only — onend chain will pick it up
+                    currentSubtitleIndex = activeIndex;
                 } else {
+                    // Nothing speaking: set index first so spokenIdx is correct
+                    currentSubtitleIndex = activeIndex;
                     postSeekCooldown = false;
                     speak(subtitles[activeIndex].text);
                 }
-                currentSubtitleIndex = activeIndex;
             }
         } else {
             const display = document.getElementById('current-subtitle');
@@ -364,6 +423,7 @@ if (window.videoSpeechReaderLoaded_v121) {
                 isVideoPlaying = false;
                 if (document.getElementById('video-status'))
                     document.getElementById('video-status').textContent = CFG.paused;
+                speakGeneration++;
                 speechSynthesis.cancel();
                 currentlySpeaking = false;
                 justSeeked = false;
@@ -372,6 +432,7 @@ if (window.videoSpeechReaderLoaded_v121) {
                 break;
             case 'ended':
                 isVideoPlaying = false;
+                speakGeneration++;
                 speechSynthesis.cancel();
                 currentlySpeaking = false;
                 justSeeked = false;
@@ -431,6 +492,7 @@ if (window.videoSpeechReaderLoaded_v121) {
         const label = document.getElementById('tts-toggle-label');
 
         if (!ttsEnabled) {
+            speakGeneration++;
             speechSynthesis.cancel();
             currentlySpeaking = false;
             justSeeked = false;
@@ -546,7 +608,6 @@ if (window.videoSpeechReaderLoaded_v121) {
             document.body.appendChild(btn);
         }
 
-        // Voice warning — hidden by default, shown by checkVoiceWarning() if needed
         const warning = document.createElement('p');
         warning.id = 'tts-voice-warning';
         warning.style.cssText = [
@@ -563,8 +624,6 @@ if (window.videoSpeechReaderLoaded_v121) {
         ].join(';');
         warning.textContent = CFG.voiceWarning || '';
         btn.insertAdjacentElement('afterend', warning);
-
-        // Check immediately now that the element exists
         checkVoiceWarning();
     }
 
