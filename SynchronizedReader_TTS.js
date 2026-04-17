@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.22
+// Version: 1.23
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -147,13 +147,17 @@ if (window.videoSpeechReaderLoaded_v122) {
         const voices = speechSynthesis.getVoices();
         if (voices.length) availableVoices = voices;
     }
-    speechSynthesis.onvoiceschanged = loadVoices;
+    speechSynthesis.onvoiceschanged = () => { loadVoices(); checkVoiceWarning(); };
     loadVoices();
     setTimeout(loadVoices, 500);
     setTimeout(() => { loadVoices(); checkVoiceWarning(); }, 1500);
 
     function checkVoiceWarning() {
         if (!CFG.voiceWarning) return;
+        // Only act if voices have actually loaded — on Firefox they can be empty
+        // at 1.5s even though they'll arrive shortly via onvoiceschanged.
+        // If the list is empty we can't tell if the voice is missing, so do nothing.
+        if (!availableVoices.length) return;
         const voice = getVoice();
         if (voice) return;
         const el = document.getElementById('tts-voice-warning');
