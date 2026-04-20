@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.24d
+// Version: 1.24e
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -20,13 +20,13 @@
 // │  Then paste your SRT content below LANGUAGE.   │
 // └─────────────────────────────────────────────────┘
 
+if (window.videoSpeechReaderLoaded_v124) {
+    // Already loaded — stop here before any const declarations
+    // to avoid "Identifier already declared" errors on double load
+    throw new Error('TTS Reader v1.24 already loaded');
+}
+
 const LANGUAGE = window.SRT_LANGUAGE || 'da';
-
-// =====================================================
-// SUBTITLES — REPLACE WITH YOUR SRT CONTENT
-// Paste your .srt file content between the backticks
-// =====================================================
-
 const SUBTITLES_SRT = window.SRT_SUBTITLES || '';
 
 // =====================================================
@@ -110,11 +110,8 @@ const LANGUAGE_CONFIGS = {
 
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
-if (window.videoSpeechReaderLoaded_v124) {
-    console.log('⚠️ Video Speech Reader v1.24 already loaded, skipping');
-} else {
-    window.videoSpeechReaderLoaded_v124 = true;
-    window.videoSpeechReaderLoaded = true;
+window.videoSpeechReaderLoaded_v124 = true;
+window.videoSpeechReaderLoaded = true;
 
 (function() {
     'use strict';
@@ -700,5 +697,3 @@ if (window.videoSpeechReaderLoaded_v124) {
     }
 
 })();
-
-} // End guard
