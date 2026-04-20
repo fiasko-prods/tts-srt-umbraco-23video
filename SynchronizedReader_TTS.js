@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.24e
+// Version: 1.22apurge
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
