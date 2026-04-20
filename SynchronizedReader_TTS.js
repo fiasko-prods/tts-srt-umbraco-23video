@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.23
+// Version: 1.23b
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -110,10 +110,10 @@ const LANGUAGE_CONFIGS = {
 
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
-if (window.videoSpeechReaderLoaded_v122) {
+if (window.videoSpeechReaderLoaded_v124) {
     console.log('⚠️ Video Speech Reader v1.22 already loaded, skipping');
 } else {
-    window.videoSpeechReaderLoaded_v122 = true;
+    window.videoSpeechReaderLoaded_v124 = true;
     window.videoSpeechReaderLoaded = true;
 
 (function() {
@@ -133,7 +133,7 @@ if (window.videoSpeechReaderLoaded_v122) {
     let justSeeked           = false;
     let postSeekCooldown     = false;
     let lastKnownTime        = 0;
-    let ttsEnabled           = !isIOS;
+    let ttsEnabled           = false; // starts disabled everywhere — enabled when voice confirmed
     let iosSpeakUntil        = 0;
     // Desktop only: generation counter prevents stale onend from repeating
     let speakGeneration      = 0;
@@ -153,20 +153,27 @@ if (window.videoSpeechReaderLoaded_v122) {
     setTimeout(() => { loadVoices(); checkVoiceWarning(); }, 1500);
 
     function checkVoiceWarning() {
-        if (!CFG.voiceWarning) return;
-        // Only act if voices have actually loaded — on Firefox they can be empty
-        // at 1.5s even though they'll arrive shortly via onvoiceschanged.
-        // If the list is empty we can't tell if the voice is missing, so do nothing.
-        if (!availableVoices.length) return;
+        if (!availableVoices.length) return; // voices not loaded yet — wait for onvoiceschanged
         const voice = getVoice();
-        if (voice) return;
-        const el = document.getElementById('tts-voice-warning');
-        if (el) el.style.display = 'block';
-        // Disable TTS on desktop/Android if no matching voice found
-        if (!isIOS && ttsEnabled) {
+
+        if (isIOS) return; // iOS handled separately via toggle button gesture
+
+        const icon  = document.getElementById('tts-bubble-icon');
+        const label = document.getElementById('tts-toggle-label');
+        const el    = document.getElementById('tts-voice-warning');
+
+        if (voice) {
+            // Voice found — enable TTS and activate button
+            if (!ttsEnabled) {
+                ttsEnabled = true;
+                if (icon)  { icon.style.opacity = '1'; icon.style.filter = 'none'; }
+                if (label) { label.style.opacity = '1'; label.textContent = CFG.labelOn; }
+                setPlayerVolume(VOL_TTS_ON);
+            }
+        } else {
+            // No matching voice — show warning, keep disabled
+            if (el) el.style.display = 'block';
             ttsEnabled = false;
-            const icon  = document.getElementById('tts-bubble-icon');
-            const label = document.getElementById('tts-toggle-label');
             if (icon)  { icon.style.opacity = '0.3'; icon.style.filter = 'grayscale(100%)'; }
             if (label) { label.style.opacity = '0.45'; label.textContent = CFG.labelOff; }
             setPlayerVolume(VOL_TTS_OFF);
@@ -480,7 +487,7 @@ if (window.videoSpeechReaderLoaded_v122) {
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
-        setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
+        setPlayerVolume(VOL_TTS_OFF);
     }
 
     function setPlayerVolume(level) {
@@ -580,8 +587,8 @@ if (window.videoSpeechReaderLoaded_v122) {
                 -webkit-text-stroke:0.1px #00809c;
                 letter-spacing:1px; line-height:1;
                 font-family:Arial,sans-serif; box-sizing:border-box;
-                opacity:${isIOS ? '0.3' : '1'};
-                filter:${isIOS ? 'grayscale(100%)' : 'none'};">
+                opacity:${isIOS ? '0.3' : '0.3'};
+                filter:${isIOS ? 'grayscale(100%)' : 'grayscale(100%)'};">
                 A&nbsp;ع&nbsp;あ
                 <span style="position:absolute;bottom:-9px;left:12px;width:0;height:0;
                     border-left:6px solid transparent;border-right:6px solid transparent;
@@ -592,9 +599,9 @@ if (window.videoSpeechReaderLoaded_v122) {
             </div>
             <span id="tts-toggle-label" style="
                 font-size:2rem; font-weight:700; color:#00809c;
-                opacity:${isIOS ? '0.45' : '1'};
+                opacity:${isIOS ? '0.45' : '0.45'};
                 transition:opacity 0.2s;">
-                ${isIOS ? CFG.labelOff : CFG.labelOn}
+                ${isIOS ? CFG.labelOff : CFG.labelOff}
             </span>
         `;
 
