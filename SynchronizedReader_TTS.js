@@ -1,23 +1,23 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.24b
+// Version: 1.24d
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
 // ┌─────────────────────────────────────────────────┐
 // │              LANGUAGE CONFIGURATION             │
 // ├─────────────────────────────────────────────────┤
-// │  Set LANGUAGE below to one of these codes:      │
+// │  Set LANGUAGE below to one of these codes:     │
 // │                                                 │
-// │  'da'  → Danish       (Dansk)                   │
-// │  'en'  → English      (British)                 │
-// │  'de'  → German       (Deutsch)                 │
-// │  'ar'  → Arabic       (العربية)                    │
-// │  'tr'  → Turkish      (Türkçe)                  │
-// │  'bs'  → Bosnian      (Bosanski)                │
+// │  'da'  → Danish       (Dansk)                  │
+// │  'en'  → English      (British)                │
+// │  'de'  → German       (Deutsch)                │
+// │  'ar'  → Arabic       (العربية)                │
+// │  'tr'  → Turkish      (Türkçe)                 │
+// │  'bs'  → Bosnian      (Bosanski)               │
 // │                                                 │
-// │  Then paste your SRT content below LANGUAGE.    │
+// │  Then paste your SRT content below LANGUAGE.   │
 // └─────────────────────────────────────────────────┘
 
 const LANGUAGE = window.SRT_LANGUAGE || 'da';
