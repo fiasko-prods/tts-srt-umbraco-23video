@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.23b
+// Version: 1.24
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -111,7 +111,7 @@ const LANGUAGE_CONFIGS = {
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
 if (window.videoSpeechReaderLoaded_v124) {
-    console.log('⚠️ Video Speech Reader v1.22 already loaded, skipping');
+    console.log('⚠️ Video Speech Reader v1.24 already loaded, skipping');
 } else {
     window.videoSpeechReaderLoaded_v124 = true;
     window.videoSpeechReaderLoaded = true;
@@ -133,9 +133,8 @@ if (window.videoSpeechReaderLoaded_v124) {
     let justSeeked           = false;
     let postSeekCooldown     = false;
     let lastKnownTime        = 0;
-    let ttsEnabled           = false; // starts disabled everywhere — enabled when voice confirmed
+    let ttsEnabled           = !isIOS; // desktop starts enabled, iOS starts disabled
     let iosSpeakUntil        = 0;
-    // Desktop only: generation counter prevents stale onend from repeating
     let speakGeneration      = 0;
 
     const VOL_TTS_ON  = isIOS ? 30 : 10;
@@ -151,29 +150,22 @@ if (window.videoSpeechReaderLoaded_v124) {
     loadVoices();
     setTimeout(loadVoices, 500);
     setTimeout(() => { loadVoices(); checkVoiceWarning(); }, 1500);
+    setTimeout(() => { loadVoices(); checkVoiceWarning(); }, 3000);
 
     function checkVoiceWarning() {
-        if (!availableVoices.length) return; // voices not loaded yet — wait for onvoiceschanged
+        if (isIOS) return;
+        if (!availableVoices.length) return; // not loaded yet
         const voice = getVoice();
-
-        if (isIOS) return; // iOS handled separately via toggle button gesture
-
+        if (voice) return; // correct voice found — nothing to do
+        // No matching voice — show warning and disable
+        const el    = document.getElementById('tts-voice-warning');
         const icon  = document.getElementById('tts-bubble-icon');
         const label = document.getElementById('tts-toggle-label');
-        const el    = document.getElementById('tts-voice-warning');
-
-        if (voice) {
-            // Voice found — enable TTS and activate button
-            if (!ttsEnabled) {
-                ttsEnabled = true;
-                if (icon)  { icon.style.opacity = '1'; icon.style.filter = 'none'; }
-                if (label) { label.style.opacity = '1'; label.textContent = CFG.labelOn; }
-                setPlayerVolume(VOL_TTS_ON);
-            }
-        } else {
-            // No matching voice — show warning, keep disabled
-            if (el) el.style.display = 'block';
+        if (el)    el.style.display = 'block';
+        if (ttsEnabled) {
             ttsEnabled = false;
+            speechSynthesis.cancel();
+            speakGeneration++;
             if (icon)  { icon.style.opacity = '0.3'; icon.style.filter = 'grayscale(100%)'; }
             if (label) { label.style.opacity = '0.45'; label.textContent = CFG.labelOff; }
             setPlayerVolume(VOL_TTS_OFF);
@@ -232,7 +224,7 @@ if (window.videoSpeechReaderLoaded_v124) {
         if (fastMode) rate = Math.min(rate * 1.25, 2.0);
         if (isIOS) rate = Math.max(rate * 0.95, 0.5);
 
-        // ── iOS path (unchanged from v1.21) ──────────────────────────────────
+        // ── iOS path (v1.21 unchanged) ────────────────────────────────────────
         if (isIOS) {
             if (!isSeekedSubtitle && Date.now() < iosSpeakUntil) return;
             speechSynthesis.cancel();
@@ -277,12 +269,10 @@ if (window.videoSpeechReaderLoaded_v124) {
         }
 
         // ── Desktop / Android path ────────────────────────────────────────────
-        // Generation counter: prevents stale onend from re-speaking after cancel.
         speakGeneration++;
         const myGen = speakGeneration;
         const spokenIdx = currentSubtitleIndex;
 
-        // Only cancel on seek — let normal utterances finish naturally
         if (isSeekedSubtitle) speechSynthesis.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
@@ -296,7 +286,7 @@ if (window.videoSpeechReaderLoaded_v124) {
         currentlySpeaking = true;
         utterance.onstart = () => { if (myGen === speakGeneration) currentlySpeaking = true; };
         utterance.onend = () => {
-            if (myGen !== speakGeneration) return; // stale — ignore
+            if (myGen !== speakGeneration) return;
             currentlySpeaking = false;
             if (isSeekedSubtitle) {
                 justSeeked = false;
@@ -312,7 +302,6 @@ if (window.videoSpeechReaderLoaded_v124) {
                     speak(subtitles[idx].text);
                 }
             } else if (ttsEnabled && isVideoPlaying) {
-                // Chain to next subtitle if updateSubtitle advanced the index while we spoke
                 const sub = subtitles[currentSubtitleIndex];
                 if (sub && currentSubtitleIndex !== spokenIdx &&
                     lastKnownTime >= sub.startTime && lastKnownTime <= sub.endTime) {
@@ -362,8 +351,6 @@ if (window.videoSpeechReaderLoaded_v124) {
         if (activeIndex >= 0) {
             updateDisplay(activeIndex);
             if (isVideoPlaying && ttsEnabled) {
-
-                // ── iOS path (unchanged from v1.21) ──────────────────────────
                 if (isIOS) {
                     if (isSpeaking) {
                         currentSubtitleIndex = activeIndex;
@@ -373,23 +360,18 @@ if (window.videoSpeechReaderLoaded_v124) {
                     }
                     return;
                 }
-
-                // ── Desktop / Android path ────────────────────────────────────
                 const alreadySeen = activeIndex === currentSubtitleIndex;
                 if (alreadySeen) return;
                 const jumped = !postSeekCooldown &&
                                currentSubtitleIndex >= 0 &&
                                Math.abs(activeIndex - currentSubtitleIndex) > 1;
                 if (jumped) {
-                    // Seek: set index first then speak
                     currentSubtitleIndex = activeIndex;
                     justSeeked = true;
                     speak(subtitles[activeIndex].text, true);
                 } else if (currentlySpeaking) {
-                    // Mid-sentence: sync index only — onend chain will pick it up
                     currentSubtitleIndex = activeIndex;
                 } else {
-                    // Nothing speaking: set index first so spokenIdx is correct
                     currentSubtitleIndex = activeIndex;
                     postSeekCooldown = false;
                     speak(subtitles[activeIndex].text);
@@ -487,7 +469,7 @@ if (window.videoSpeechReaderLoaded_v124) {
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
-        setPlayerVolume(VOL_TTS_OFF);
+        setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
     }
 
     function setPlayerVolume(level) {
@@ -521,7 +503,6 @@ if (window.videoSpeechReaderLoaded_v124) {
             iosSpeakUntil = 0;
             setPlayerVolume(VOL_TTS_ON);
 
-            // iOS: speak immediately inside the tap handler — this IS the audio unlock gesture
             if (isIOS && subtitles.length > 0) {
                 let activeIdx = -1;
                 for (let i = 0; i < subtitles.length; i++) {
@@ -538,10 +519,8 @@ if (window.videoSpeechReaderLoaded_v124) {
                     }
                 }
                 if (activeIdx < 0) activeIdx = 0;
-
                 currentSubtitleIndex = activeIdx;
                 updateDisplay(activeIdx);
-
                 const text = cleanText(subtitles[activeIdx].text);
                 const rate = Math.max(parseFloat(document.getElementById('rate-slider')?.value || 1.2) * 0.95, 0.5);
                 const u = new SpeechSynthesisUtterance(text);
@@ -587,8 +566,8 @@ if (window.videoSpeechReaderLoaded_v124) {
                 -webkit-text-stroke:0.1px #00809c;
                 letter-spacing:1px; line-height:1;
                 font-family:Arial,sans-serif; box-sizing:border-box;
-                opacity:${isIOS ? '0.3' : '0.3'};
-                filter:${isIOS ? 'grayscale(100%)' : 'grayscale(100%)'};">
+                opacity:${isIOS ? '0.3' : '1'};
+                filter:${isIOS ? 'grayscale(100%)' : 'none'};">
                 A&nbsp;ع&nbsp;あ
                 <span style="position:absolute;bottom:-9px;left:12px;width:0;height:0;
                     border-left:6px solid transparent;border-right:6px solid transparent;
@@ -599,9 +578,9 @@ if (window.videoSpeechReaderLoaded_v124) {
             </div>
             <span id="tts-toggle-label" style="
                 font-size:2rem; font-weight:700; color:#00809c;
-                opacity:${isIOS ? '0.45' : '0.45'};
+                opacity:${isIOS ? '0.45' : '1'};
                 transition:opacity 0.2s;">
-                ${isIOS ? CFG.labelOff : CFG.labelOff}
+                ${isIOS ? CFG.labelOff : CFG.labelOn}
             </span>
         `;
 
@@ -635,6 +614,8 @@ if (window.videoSpeechReaderLoaded_v124) {
         ].join(';');
         warning.textContent = CFG.voiceWarning || '';
         btn.insertAdjacentElement('afterend', warning);
+
+        // Now that the DOM element exists, run the voice check
         checkVoiceWarning();
     }
 
@@ -706,7 +687,6 @@ if (window.videoSpeechReaderLoaded_v124) {
             await new Promise(r => setTimeout(r, 500));
         }
         if (!iframe) { console.error('❌ No iframe found'); return; }
-
         subtitles = parseSRT(SUBTITLES_SRT);
         createUI();
         injectToggleButton();
