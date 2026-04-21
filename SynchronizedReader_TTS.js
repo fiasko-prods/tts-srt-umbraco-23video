@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.26
+// Version: 1.27
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -20,12 +20,10 @@
 // │  Then paste your SRT content below LANGUAGE.   │
 // └─────────────────────────────────────────────────┘
 
-(function() {
-// Guard — works on SPA re-execution because const is now function-scoped
-if (window.videoSpeechReaderLoaded_v126) return;
+window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
 
-const LANGUAGE = window.SRT_LANGUAGE || 'da';
-const SUBTITLES_SRT = window.SRT_SUBTITLES || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
+const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -108,8 +106,7 @@ const LANGUAGE_CONFIGS = {
 
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
-window.videoSpeechReaderLoaded_v126 = true;
-window.videoSpeechReaderLoaded = true;
+// State is local to this invocation
 
 (function() {
     'use strict';
@@ -473,7 +470,7 @@ window.videoSpeechReaderLoaded = true;
         const _pushState = history.pushState;
         history.pushState = function() {
             clearInterval(pollInterval);
-            window.videoSpeechReaderLoaded_v126 = false;
+            window.videoSpeechReaderLoaded_v127 = false;
             history.pushState = _pushState;
             return _pushState.apply(this, arguments);
         };
@@ -709,4 +706,7 @@ window.videoSpeechReaderLoaded = true;
 
 })();
 
-})(); // end outer IIFE
+}; // end initTTSReader
+
+// Auto-call on first load
+window.initTTSReader();
