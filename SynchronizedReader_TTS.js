@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.22apurge
+// Version: 1.26
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -20,11 +20,9 @@
 // │  Then paste your SRT content below LANGUAGE.   │
 // └─────────────────────────────────────────────────┘
 
-if (window.videoSpeechReaderLoaded_v124) {
-    // Already loaded — stop here before any const declarations
-    // to avoid "Identifier already declared" errors on double load
-    throw new Error('TTS Reader v1.24 already loaded');
-}
+(function() {
+// Guard — works on SPA re-execution because const is now function-scoped
+if (window.videoSpeechReaderLoaded_v126) return;
 
 const LANGUAGE = window.SRT_LANGUAGE || 'da';
 const SUBTITLES_SRT = window.SRT_SUBTITLES || '';
@@ -110,7 +108,7 @@ const LANGUAGE_CONFIGS = {
 
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
-window.videoSpeechReaderLoaded_v124 = true;
+window.videoSpeechReaderLoaded_v126 = true;
 window.videoSpeechReaderLoaded = true;
 
 (function() {
@@ -459,13 +457,26 @@ window.videoSpeechReaderLoaded = true;
                 context: 'player.js', version, method: 'addEventListener', value: evt
             }), origin);
         });
-        setInterval(() => {
-            if (!iframe) return;
+        const pollInterval = setInterval(() => {
+            if (!iframe) {
+                clearInterval(pollInterval);
+                return;
+            }
             iframe.contentWindow.postMessage(JSON.stringify({
                 context: 'player.js', version, method: 'getCurrentTime'
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
+        // Clean up on SPA navigation so interval doesn't fire after page change
+        window.addEventListener('beforeunload', () => clearInterval(pollInterval), { once: true });
+        // Also handle Next.js/Umbraco SPA route changes
+        const _pushState = history.pushState;
+        history.pushState = function() {
+            clearInterval(pollInterval);
+            window.videoSpeechReaderLoaded_v126 = false;
+            history.pushState = _pushState;
+            return _pushState.apply(this, arguments);
+        };
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
     }
 
@@ -697,3 +708,5 @@ window.videoSpeechReaderLoaded = true;
     }
 
 })();
+
+})(); // end outer IIFE
