@@ -749,14 +749,39 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     }
 
     async function init() {
-        for (let i = 0; i < 20; i++) {
-            iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
-            if (iframe) break;
-            await new Promise(r => setTimeout(r, 500));
+        // Log SRT content for debugging
+        console.log('📄 SRT length:' + SUBTITLES_SRT.length + ' | first 80 chars: ' + SUBTITLES_SRT.substring(0, 80).replace(/\n/g, '↵'));
+
+        // Wait for iframe — use MutationObserver so cookie consent delay doesn't matter
+        iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
+        if (!iframe) {
+            console.log('⏳ iframe not found yet — waiting via MutationObserver...');
+            await new Promise(resolve => {
+                const observer = new MutationObserver(() => {
+                    const found = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
+                    if (found) {
+                        iframe = found;
+                        observer.disconnect();
+                        console.log('✅ iframe appeared after cookie consent');
+                        resolve();
+                    }
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+                // Safety timeout after 60s
+                setTimeout(() => {
+                    observer.disconnect();
+                    if (!iframe) {
+                        console.error('❌ No iframe found after 60s');
+                        resolve();
+                    }
+                }, 60000);
+            });
         }
-        if (!iframe) { console.error('❌ No iframe found'); return; }
-        console.log('✅ iframe found | subs:' + subtitles.length);
+
+        if (!iframe) return;
+
         subtitles = parseSRT(SUBTITLES_SRT);
+        console.log('✅ iframe found | subs:' + subtitles.length);
         createUI();
         injectToggleButton();
         if (playerReady) subscribeToEvents();
