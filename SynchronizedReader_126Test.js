@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 126Test2
+// Version: 126Test
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -457,8 +457,15 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 }
                 break;
             case 'getCurrentTime':
-                if (currentTime !== undefined && currentTime !== null && isVideoPlaying) {
-                    updateSubtitle(currentTime);
+                if (currentTime !== undefined && currentTime !== null) {
+                    if (!isVideoPlaying && currentTime > 0) {
+                        // Video was already playing when we subscribed late (cookie consent delay)
+                        isVideoPlaying = true;
+                        console.log('▶ Detected already-playing at t:' + currentTime.toFixed(2));
+                        if (document.getElementById('video-status'))
+                            document.getElementById('video-status').textContent = CFG.playing;
+                    }
+                    if (isVideoPlaying) updateSubtitle(currentTime);
                 }
                 break;
         }
@@ -494,6 +501,14 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             return _pushState.apply(this, arguments);
         };
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
+
+        // Immediately probe — if video already playing when iframe appeared
+        // (cookie consent delay), we'll get a time > 0 and can detect it
+        setTimeout(() => {
+            if (iframe) iframe.contentWindow.postMessage(JSON.stringify({
+                context: 'player.js', version, method: 'getCurrentTime'
+            }), origin);
+        }, 500);
     }
 
     function setPlayerVolume(level) {
