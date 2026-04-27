@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 127TestA
+// Version: 126TestB
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -143,6 +143,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     let postSeekCooldown     = false;
     let lastKnownTime        = 0;
     let ttsEnabled           = !isIOS; // desktop starts enabled, iOS starts disabled
+    let pollInterval         = null;   // stored so subscribeToEvents can clear on re-subscribe
     let iosSpeakUntil        = 0;
     let speakGeneration      = 0;
     let hasReceivedPlayEvent = false; // guards getCurrentTime from overriding pause state
@@ -400,14 +401,22 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!event.data) return;
         try {
             const data = JSON.parse(event.data);
-            const isReadyMsg = data.ready === true
-                || (data.context === 'player.js' && data.event === 'ready')
-                || (data.context === 'player.js' && !playerReady);
-            if (isReadyMsg && !playerReady) {
+            const isGenuineReady = data.ready === true
+                || (data.context === 'player.js' && data.event === 'ready');
+            const isFirstMsg = data.context === 'player.js' && !playerReady;
+
+            if (isGenuineReady || isFirstMsg) {
+                const wasReady = playerReady;
                 playerReady = true;
-                console.log('✅ Player ready');
-        if (iframe) subscribeToEvents();
-                if (data.ready === true || data.event === 'ready') return;
+                if (iframe) {
+                    // Always re-subscribe on genuine ready — player may have restarted
+                    // (this is the key fix: cookie consent causes player to reinitialize)
+                    if (isGenuineReady || !wasReady) {
+                        console.log('✅ Player ready — subscribing' + (wasReady ? ' (re-subscribe)' : ''));
+                        subscribeToEvents();
+                    }
+                }
+                if (isGenuineReady) return;
             }
             if (data.context !== 'player.js') return;
             if (data.event) handleEvent(data.event, data.value);
@@ -482,6 +491,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     function subscribeToEvents() {
         if (!iframe || !playerReady) return;
+        // Clear any existing poll interval before creating a new one
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
         const origin  = 'https://regionsjaelland.23video.com';
         const version = '0.0.12';
         ['play', 'pause', 'ended', 'timeupdate', 'progress'].forEach(evt => {
@@ -489,9 +500,10 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 context: 'player.js', version, method: 'addEventListener', value: evt
             }), origin);
         });
-        const pollInterval = setInterval(() => {
+        pollInterval = setInterval(() => {
             if (!iframe) {
                 clearInterval(pollInterval);
+                pollInterval = null;
                 return;
             }
             iframe.contentWindow.postMessage(JSON.stringify({
@@ -499,25 +511,16 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
-        // Clean up on SPA navigation so interval doesn't fire after page change
-        window.addEventListener('beforeunload', () => clearInterval(pollInterval), { once: true });
-        // Also handle Next.js/Umbraco SPA route changes
-        const _pushState = history.pushState;
-        history.pushState = function() {
-            clearInterval(pollInterval);
-            window.videoSpeechReaderLoaded_v127 = false;
-            history.pushState = _pushState;
-            return _pushState.apply(this, arguments);
-        };
+        window.addEventListener('beforeunload', () => { clearInterval(pollInterval); pollInterval = null; }, { once: true });
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
 
-        // Immediately probe — if video already playing when iframe appeared
-        // (cookie consent delay), we'll get a time > 0 and can detect it
+        // Immediately probe — detect if already playing (cookie consent delay)
         setTimeout(() => {
             if (iframe) iframe.contentWindow.postMessage(JSON.stringify({
                 context: 'player.js', version, method: 'getCurrentTime'
             }), origin);
-        }, 500);
+        }, 300);
+        console.log('✅ Subscribed to player events');
     }
 
     function setPlayerVolume(level) {
