@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.27
+// Version: 1.28
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -21,6 +21,23 @@
 // └─────────────────────────────────────────────────┘
 
 window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
+
+    // ── Cleanup previous instance ─────────────────────────────────────────
+    // Remove DOM elements from previous page
+    ['tts-toggle-wrapper', 'tts-voice-warning',
+     'tts-log-container', 'tts-ui-container'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
+    // Remove any container divs we injected (identified by border color)
+    document.querySelectorAll('[data-tts-reader]').forEach(el => el.remove());
+    // Remove previous message listener — stored on window
+    if (window._ttsMessageHandler) {
+        window.removeEventListener('message', window._ttsMessageHandler);
+        window._ttsMessageHandler = null;
+    }
+    // Cancel any pending speech
+    try { speechSynthesis.cancel(); } catch(e) {}
 
 const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
 const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
@@ -126,12 +143,15 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     let postSeekCooldown     = false;
     let lastKnownTime        = 0;
     let ttsEnabled           = !isIOS; // desktop starts enabled, iOS starts disabled
+    let pollInterval         = null;   // stored so subscribeToEvents can clear on re-subscribe
     let iosSpeakUntil        = 0;
     let speakGeneration      = 0;
+    let hasReceivedPlayEvent = false; // guards getCurrentTime from overriding pause state
 
     const VOL_TTS_ON  = isIOS ? 30 : 10;
     const VOL_TTS_OFF = 100;
 
+    window._ttsMessageHandler = handlePlayerMessage;
     window.addEventListener('message', handlePlayerMessage);
 
     function loadVoices() {
@@ -381,13 +401,22 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!event.data) return;
         try {
             const data = JSON.parse(event.data);
-            const isReadyMsg = data.ready === true
-                || (data.context === 'player.js' && data.event === 'ready')
-                || (data.context === 'player.js' && !playerReady);
-            if (isReadyMsg && !playerReady) {
+            const isGenuineReady = data.ready === true
+                || (data.context === 'player.js' && data.event === 'ready');
+            const isFirstMsg = data.context === 'player.js' && !playerReady;
+
+            if (isGenuineReady || isFirstMsg) {
+                const wasReady = playerReady;
                 playerReady = true;
-                if (iframe) subscribeToEvents();
-                if (data.ready === true || data.event === 'ready') return;
+                if (iframe) {
+                    // Always re-subscribe on genuine ready — player may have restarted
+                    // (this is the key fix: cookie consent causes player to reinitialize)
+                    if (isGenuineReady || !wasReady) {
+                        console.log('✅ Player ready — subscribing' + (wasReady ? ' (re-subscribe)' : ''));
+                        subscribeToEvents();
+                    }
+                }
+                if (isGenuineReady) return;
             }
             if (data.context !== 'player.js') return;
             if (data.event) handleEvent(data.event, data.value);
@@ -400,11 +429,13 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             : (value?.seconds ?? value?.currentTime ?? value?.time);
         switch (eventName) {
             case 'play':
+                hasReceivedPlayEvent = true;
                 isVideoPlaying = true;
                 if (document.getElementById('video-status'))
                     document.getElementById('video-status').textContent = CFG.playing;
-                break;
+                        break;
             case 'pause':
+                hasReceivedPlayEvent = true;
                 isVideoPlaying = false;
                 if (document.getElementById('video-status'))
                     document.getElementById('video-status').textContent = CFG.paused;
@@ -414,8 +445,9 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 justSeeked = false;
                 postSeekCooldown = false;
                 iosSpeakUntil = 0;
-                break;
+                        break;
             case 'ended':
+                hasReceivedPlayEvent = true;
                 isVideoPlaying = false;
                 speakGeneration++;
                 speechSynthesis.cancel();
@@ -430,6 +462,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             case 'progress':
                 if (currentTime !== undefined && currentTime !== null) {
                     if (!isVideoPlaying) {
+                        hasReceivedPlayEvent = true;
                         isVideoPlaying = true;
                         if (document.getElementById('video-status'))
                             document.getElementById('video-status').textContent = CFG.playing;
@@ -438,8 +471,17 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 }
                 break;
             case 'getCurrentTime':
-                if (currentTime !== undefined && currentTime !== null && isVideoPlaying) {
-                    updateSubtitle(currentTime);
+                if (currentTime !== undefined && currentTime !== null) {
+                    // Only detect already-playing if we haven't received any real
+                    // play/pause event yet — prevents this from overriding pause state
+                    if (!hasReceivedPlayEvent && !isVideoPlaying && currentTime > 0) {
+                        hasReceivedPlayEvent = true;
+                        isVideoPlaying = true;
+                        console.log('▶ Detected already-playing at t:' + currentTime.toFixed(2));
+                        if (document.getElementById('video-status'))
+                            document.getElementById('video-status').textContent = CFG.playing;
+                    }
+                    if (isVideoPlaying) updateSubtitle(currentTime);
                 }
                 break;
         }
@@ -447,6 +489,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     function subscribeToEvents() {
         if (!iframe || !playerReady) return;
+        // Clear any existing poll interval before creating a new one
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
         const origin  = 'https://regionsjaelland.23video.com';
         const version = '0.0.12';
         ['play', 'pause', 'ended', 'timeupdate', 'progress'].forEach(evt => {
@@ -454,9 +498,10 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 context: 'player.js', version, method: 'addEventListener', value: evt
             }), origin);
         });
-        const pollInterval = setInterval(() => {
+        pollInterval = setInterval(() => {
             if (!iframe) {
                 clearInterval(pollInterval);
+                pollInterval = null;
                 return;
             }
             iframe.contentWindow.postMessage(JSON.stringify({
@@ -464,17 +509,15 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
-        // Clean up on SPA navigation so interval doesn't fire after page change
-        window.addEventListener('beforeunload', () => clearInterval(pollInterval), { once: true });
-        // Also handle Next.js/Umbraco SPA route changes
-        const _pushState = history.pushState;
-        history.pushState = function() {
-            clearInterval(pollInterval);
-            window.videoSpeechReaderLoaded_v127 = false;
-            history.pushState = _pushState;
-            return _pushState.apply(this, arguments);
-        };
+        window.addEventListener('beforeunload', () => { clearInterval(pollInterval); pollInterval = null; }, { once: true });
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
+
+        // Immediately probe — detect if already playing (cookie consent delay)
+        setTimeout(() => {
+            if (iframe) iframe.contentWindow.postMessage(JSON.stringify({
+                context: 'player.js', version, method: 'getCurrentTime'
+            }), origin);
+        }, 300);
     }
 
     function setPlayerVolume(level) {
@@ -625,7 +668,9 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     }
 
     function createUI() {
+
         const container = document.createElement('div');
+        container.setAttribute('data-tts-reader', '1');
         container.style.cssText = 'margin:2rem 0;padding:2rem;border:2px solid #0066cc;border-radius:8px;background:white;font-family:system-ui;';
         container.innerHTML = `
             <div style="padding:1rem;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:8px;margin-bottom:1.5rem;">
@@ -686,13 +731,39 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     }
 
     async function init() {
-        for (let i = 0; i < 20; i++) {
-            iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
-            if (iframe) break;
-            await new Promise(r => setTimeout(r, 500));
+        // Log SRT content for debugging
+        console.log('📄 SRT length:' + SUBTITLES_SRT.length + ' | first 80 chars: ' + SUBTITLES_SRT.substring(0, 80).replace(/\n/g, '↵'));
+
+        // Wait for iframe — use MutationObserver so cookie consent delay doesn't matter
+        iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
+        if (!iframe) {
+            console.log('⏳ iframe not found yet — waiting via MutationObserver...');
+            await new Promise(resolve => {
+                const observer = new MutationObserver(() => {
+                    const found = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
+                    if (found) {
+                        iframe = found;
+                        observer.disconnect();
+                        console.log('✅ iframe appeared after cookie consent');
+                        resolve();
+                    }
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+                // Safety timeout after 60s
+                setTimeout(() => {
+                    observer.disconnect();
+                    if (!iframe) {
+                        console.error('❌ No iframe found after 60s');
+                        resolve();
+                    }
+                }, 60000);
+            });
         }
-        if (!iframe) { console.error('❌ No iframe found'); return; }
+
+        if (!iframe) return;
+
         subtitles = parseSRT(SUBTITLES_SRT);
+        console.log('✅ iframe found | subs:' + subtitles.length);
         createUI();
         injectToggleButton();
         if (playerReady) subscribeToEvents();
@@ -707,6 +778,3 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 })();
 
 }; // end initTTSReader
-
-// Auto-call on first load
-window.initTTSReader();
