@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 126Test
+// Version: 127Test
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -145,6 +145,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     let ttsEnabled           = !isIOS; // desktop starts enabled, iOS starts disabled
     let iosSpeakUntil        = 0;
     let speakGeneration      = 0;
+    let hasReceivedPlayEvent = false; // guards getCurrentTime from overriding pause state
 
     const VOL_TTS_ON  = isIOS ? 30 : 10;
     const VOL_TTS_OFF = 100;
@@ -419,11 +420,14 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             : (value?.seconds ?? value?.currentTime ?? value?.time);
         switch (eventName) {
             case 'play':
+                hasReceivedPlayEvent = true;
                 isVideoPlaying = true;
                 if (document.getElementById('video-status'))
                     document.getElementById('video-status').textContent = CFG.playing;
+                console.log('▶ play event');
                 break;
             case 'pause':
+                hasReceivedPlayEvent = true;
                 isVideoPlaying = false;
                 if (document.getElementById('video-status'))
                     document.getElementById('video-status').textContent = CFG.paused;
@@ -433,8 +437,10 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 justSeeked = false;
                 postSeekCooldown = false;
                 iosSpeakUntil = 0;
+                console.log('⏸ pause event');
                 break;
             case 'ended':
+                hasReceivedPlayEvent = true;
                 isVideoPlaying = false;
                 speakGeneration++;
                 speechSynthesis.cancel();
@@ -449,6 +455,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             case 'progress':
                 if (currentTime !== undefined && currentTime !== null) {
                     if (!isVideoPlaying) {
+                        hasReceivedPlayEvent = true;
                         isVideoPlaying = true;
                         if (document.getElementById('video-status'))
                             document.getElementById('video-status').textContent = CFG.playing;
@@ -458,8 +465,10 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 break;
             case 'getCurrentTime':
                 if (currentTime !== undefined && currentTime !== null) {
-                    if (!isVideoPlaying && currentTime > 0) {
-                        // Video was already playing when we subscribed late (cookie consent delay)
+                    // Only detect already-playing if we haven't received any real
+                    // play/pause event yet — prevents this from overriding pause state
+                    if (!hasReceivedPlayEvent && !isVideoPlaying && currentTime > 0) {
+                        hasReceivedPlayEvent = true;
                         isVideoPlaying = true;
                         console.log('▶ Detected already-playing at t:' + currentTime.toFixed(2));
                         if (document.getElementById('video-status'))
@@ -663,41 +672,67 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         const logPanel = document.createElement('div');
         logPanel.id = 'tts-log-panel';
         logPanel.setAttribute('data-tts-reader', '1');
-        logPanel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:38vh;overflow-y:auto;background:rgba(0,0,0,0.92);color:#0f0;font-family:monospace;font-size:11px;padding:0.5rem;z-index:99999;border-top:3px solid #00809c;box-sizing:border-box;';
+        logPanel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:40vh;overflow-y:auto;background:rgba(0,0,0,0.92);color:#0f0;font-family:monospace;font-size:12px;padding:0.5rem;z-index:99999;border-top:3px solid #00809c;box-sizing:border-box;';
         const toolbar = document.createElement('div');
-        toolbar.style.cssText = 'position:sticky;top:0;background:#111;padding:4px;display:flex;gap:6px;margin-bottom:4px;';
+        toolbar.style.cssText = 'position:sticky;top:0;background:#111;padding:4px;display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap;';
+        const statusBar = document.createElement('div');
+        statusBar.id = 'tts-log-status';
+        statusBar.style.cssText = 'width:100%;font-size:11px;color:#ff0;padding:2px 0;';
+        statusBar.textContent = 'Status: initialising...';
         const copyBtn = document.createElement('button');
-        copyBtn.textContent = '📋 Copy log';
-        copyBtn.style.cssText = 'background:#00809c;color:#fff;border:none;padding:4px 10px;cursor:pointer;font-size:11px;border-radius:4px;flex:1;';
+        copyBtn.textContent = '📋 Copy';
+        copyBtn.style.cssText = 'background:#00809c;color:#fff;border:none;padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px;flex:1;min-height:40px;';
         copyBtn.onclick = () => {
             const text = Array.from(logLines.children).map(l => l.textContent).join('\n');
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(() => { copyBtn.textContent = '✅ Copied!'; setTimeout(() => { copyBtn.textContent = '📋 Copy log'; }, 2000); });
+                navigator.clipboard.writeText(text).then(() => { copyBtn.textContent = '✅ Copied!'; setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000); });
             } else {
                 const ta = document.createElement('textarea');
                 ta.value = text; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
                 document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-                copyBtn.textContent = '✅ Copied!'; setTimeout(() => { copyBtn.textContent = '📋 Copy log'; }, 2000);
+                copyBtn.textContent = '✅ Copied!'; setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000);
             }
         };
         const clearBtn = document.createElement('button');
         clearBtn.textContent = '✕ Clear';
-        clearBtn.style.cssText = 'background:#333;color:#fff;border:none;padding:4px 10px;cursor:pointer;font-size:11px;border-radius:4px;';
+        clearBtn.style.cssText = 'background:#333;color:#fff;border:none;padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px;min-height:40px;';
         clearBtn.onclick = () => { logLines.innerHTML = ''; };
-        toolbar.appendChild(copyBtn); toolbar.appendChild(clearBtn);
+        toolbar.appendChild(statusBar);
+        toolbar.appendChild(copyBtn);
+        toolbar.appendChild(clearBtn);
         logPanel.appendChild(toolbar);
         const logLines = document.createElement('div');
         logPanel.appendChild(logLines);
         document.body.appendChild(logPanel);
+
+        // Live status bar — updates every 500ms showing key state values
+        setInterval(() => {
+            const s = document.getElementById('tts-log-status');
+            if (s) s.textContent =
+                'play:' + isVideoPlaying +
+                ' tts:' + ttsEnabled +
+                ' spk:' + currentlySpeaking +
+                ' sub:' + currentSubtitleIndex +
+                ' t:' + lastKnownTime.toFixed(1) +
+                ' gen:' + speakGeneration +
+                ' hasPlay:' + hasReceivedPlayEvent;
+        }, 500);
+
         const _origLog = console.log.bind(console);
         console.log = function() {
             _origLog.apply(console, arguments);
             const msg = Array.from(arguments).map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
             const line = document.createElement('div');
-            line.style.cssText = 'border-bottom:1px solid #1a1a1a;padding:2px 0;word-break:break-all;';
+            let color = '#0f0';
+            if (msg.includes('❌')) color = '#f44';
+            else if (msg.includes('⏸') || msg.includes('pause')) color = '#fa0';
+            else if (msg.includes('▶') || msg.includes('play')) color = '#4f4';
+            else if (msg.includes('🗣') || msg.includes('speak')) color = '#4af';
+            else if (msg.includes('⚠')) color = '#fa0';
+            line.style.cssText = 'border-bottom:1px solid #1a1a1a;padding:2px 0;word-break:break-all;color:' + color + ';';
             line.textContent = new Date().toLocaleTimeString('da-DK',{hour12:false}) + '  ' + msg;
             logLines.appendChild(line);
-            while (logLines.children.length > 150) logLines.removeChild(logLines.firstChild);
+            while (logLines.children.length > 200) logLines.removeChild(logLines.firstChild);
             logPanel.scrollTop = logPanel.scrollHeight;
         };
         console.log('📋 126Test | lang:' + LANGUAGE + ' | isIOS:' + isIOS);
