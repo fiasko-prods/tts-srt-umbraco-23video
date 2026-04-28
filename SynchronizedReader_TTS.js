@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.31
+// Version: 1.32
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -30,7 +30,6 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
         if (el) el.remove();
     });
     // Remove any container divs we injected (identified by border color)
-    document.querySelectorAll('[data-tts-reader]').forEach(el => el.remove());
     // Remove previous message listener — stored on window
     if (window._ttsMessageHandler) {
         window.removeEventListener('message', window._ttsMessageHandler);
@@ -670,67 +669,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         checkVoiceWarning();
     }
 
-    function createUI() {
 
-        const container = document.createElement('div');
-        container.style.cssText = 'margin:2rem 0;padding:2rem;border:2px solid #0066cc;border-radius:8px;background:white;font-family:system-ui;';
-        container.innerHTML = `
-            <div style="padding:1rem;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:8px;margin-bottom:1.5rem;">
-                <div style="display:flex;justify-content:space-between;">
-                    <div>
-                        <div style="font-size:0.85rem;opacity:0.9;">${CFG.statusLabel}</div>
-                        <div id="video-status" style="font-size:1.2rem;font-weight:bold;">${CFG.paused}</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:0.85rem;opacity:0.9;">${CFG.subtitleLabel}</div>
-                        <div id="subtitle-counter" style="font-size:1.2rem;font-weight:bold;">0 / ${subtitles.length}</div>
-                    </div>
-                </div>
-            </div>
-            <div id="current-subtitle" style="padding:2rem;background:#1a1a1a;color:#fff;border-radius:8px;
-                min-height:120px;font-size:1.3rem;text-align:center;margin-bottom:1.5rem;
-                display:flex;align-items:center;justify-content:center;">
-                <p style="margin:0;opacity:0.6;">${CFG.waiting}</p>
-            </div>
-            <div style="padding:1rem;background:#f8f9fa;border-radius:8px;margin-bottom:1rem;">
-                <div style="margin-bottom:0.75rem;">
-                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
-                        ${CFG.speed}: <span id="rate-value">1.2x</span>
-                    </label>
-                    <input type="range" id="rate-slider" min="0.5" max="2" step="0.1" value="1.2" style="width:100%;">
-                </div>
-                <div style="margin-bottom:0.75rem;">
-                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
-                        ${CFG.pitch}: <span id="pitch-value">1.0x</span>
-                    </label>
-                    <input type="range" id="pitch-slider" min="0.5" max="2" step="0.1" value="1.0" style="width:100%;">
-                </div>
-                <div>
-                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
-                        ${CFG.volume}: <span id="volume-value">150%</span>
-                    </label>
-                    <input type="range" id="volume-slider" min="0" max="2" step="0.1" value="1.5" style="width:100%;">
-                </div>
-                <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #dee2e6;">
-                    <label style="display:flex;align-items:center;cursor:pointer;font-weight:600;">
-                        <input type="checkbox" id="fast-mode" style="margin-right:0.5rem;width:18px;height:18px;cursor:pointer;">
-                        ${CFG.turbo}
-                    </label>
-                    <p style="margin:0.5rem 0 0 0;font-size:0.85rem;color:#666;">${CFG.turboHint}</p>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(container);
-        document.getElementById('rate-slider').addEventListener('input', e => {
-            document.getElementById('rate-value').textContent = e.target.value + 'x';
-        });
-        document.getElementById('pitch-slider').addEventListener('input', e => {
-            document.getElementById('pitch-value').textContent = e.target.value + 'x';
-        });
-        document.getElementById('volume-slider').addEventListener('input', e => {
-            document.getElementById('volume-value').textContent = Math.round(e.target.value * 100) + '%';
-        });
-    }
 
     async function init() {
         // Log SRT content for debugging
@@ -762,7 +701,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!iframe) return;
 
         subtitles = parseSRT(SUBTITLES_SRT);
-        createUI();
         injectToggleButton();
         if (playerReady) subscribeToEvents();
     }
