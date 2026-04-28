@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.32b
+// Version: 1.32c
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -29,7 +29,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
         const el = document.getElementById(id);
         if (el) el.remove();
     });
-    // Remove any container divs we injected (identified by border color)
+    // Clear previous poll interval
+    if (window._ttsPollInterval) { clearInterval(window._ttsPollInterval); window._ttsPollInterval = null; }
     // Remove previous message listener — stored on window
     if (window._ttsMessageHandler) {
         window.removeEventListener('message', window._ttsMessageHandler);
@@ -504,6 +505,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             if (!iframe) {
                 clearInterval(pollInterval);
                 pollInterval = null;
+                window._ttsPollInterval = null;
                 return;
             }
             iframe.contentWindow.postMessage(JSON.stringify({
@@ -511,6 +513,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
+        window._ttsPollInterval = pollInterval;
         window.addEventListener('beforeunload', () => { clearInterval(pollInterval); pollInterval = null; }, { once: true });
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
 
