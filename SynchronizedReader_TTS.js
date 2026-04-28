@@ -1,19 +1,8 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.28b
+// Version: 1.28
 // Author: Marco Iovane maiov@regionsjaelland.dk
-// =====================================================
-//
-// Changes vs 1.28 (surgical, no behaviour drift):
-//   1. handlePlayerMessage now validates event.origin against the
-//      23video origin — rejects messages from any other source.
-//   2. pollInterval hoisted from a closure variable onto
-//      window._ttsPollInterval so the cleanup block at the top of
-//      initTTSReader() can actually clear it across SPA navigations.
-//
-// Nothing else has been touched. iOS speech path, subtitle logic,
-// UI, and Umbraco loader all unchanged.
 // =====================================================
 //
 // ┌─────────────────────────────────────────────────┐
@@ -46,11 +35,6 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     if (window._ttsMessageHandler) {
         window.removeEventListener('message', window._ttsMessageHandler);
         window._ttsMessageHandler = null;
-    }
-    // 1.28b: clear previous instance's poll interval (was leaking across SPA navs)
-    if (window._ttsPollInterval) {
-        try { clearInterval(window._ttsPollInterval); } catch(e) {}
-        window._ttsPollInterval = null;
     }
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
@@ -139,9 +123,6 @@ const LANGUAGE_CONFIGS = {
 
 const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
-// 1.28b: hoisted to module scope so handlePlayerMessage can use it
-const PLAYER_ORIGIN = 'https://regionsjaelland.23video.com';
-
 // State is local to this invocation
 
 (function() {
@@ -162,7 +143,7 @@ const PLAYER_ORIGIN = 'https://regionsjaelland.23video.com';
     let postSeekCooldown     = false;
     let lastKnownTime        = 0;
     let ttsEnabled           = !isIOS; // desktop starts enabled, iOS starts disabled
-    // 1.28b: pollInterval no longer a local — uses window._ttsPollInterval directly
+    let pollInterval         = null;   // stored so subscribeToEvents can clear on re-subscribe
     let iosSpeakUntil        = 0;
     let speakGeneration      = 0;
     let hasReceivedPlayEvent = false; // guards getCurrentTime from overriding pause state
@@ -417,8 +398,6 @@ const PLAYER_ORIGIN = 'https://regionsjaelland.23video.com';
     }
 
     function handlePlayerMessage(event) {
-        // 1.28b: reject postMessages from any origin other than the 23video player
-        if (event.origin !== PLAYER_ORIGIN) return;
         if (!event.data) return;
         try {
             const data = JSON.parse(event.data);
@@ -510,42 +489,34 @@ const PLAYER_ORIGIN = 'https://regionsjaelland.23video.com';
 
     function subscribeToEvents() {
         if (!iframe || !playerReady) return;
-        // 1.28b: clear any existing poll interval (now via window) before recreating
-        if (window._ttsPollInterval) {
-            clearInterval(window._ttsPollInterval);
-            window._ttsPollInterval = null;
-        }
+        // Clear any existing poll interval before creating a new one
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+        const origin  = 'https://regionsjaelland.23video.com';
         const version = '0.0.12';
         ['play', 'pause', 'ended', 'timeupdate', 'progress'].forEach(evt => {
             iframe.contentWindow.postMessage(JSON.stringify({
                 context: 'player.js', version, method: 'addEventListener', value: evt
-            }), PLAYER_ORIGIN);
+            }), origin);
         });
-        // 1.28b: store on window so cross-instance cleanup can reach it
-        window._ttsPollInterval = setInterval(() => {
+        pollInterval = setInterval(() => {
             if (!iframe) {
-                clearInterval(window._ttsPollInterval);
-                window._ttsPollInterval = null;
+                clearInterval(pollInterval);
+                pollInterval = null;
                 return;
             }
             iframe.contentWindow.postMessage(JSON.stringify({
                 context: 'player.js', version, method: 'getCurrentTime'
-            }), PLAYER_ORIGIN);
+            }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
-        window.addEventListener('beforeunload', () => {
-            if (window._ttsPollInterval) {
-                clearInterval(window._ttsPollInterval);
-                window._ttsPollInterval = null;
-            }
-        }, { once: true });
+        window.addEventListener('beforeunload', () => { clearInterval(pollInterval); pollInterval = null; }, { once: true });
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
 
         // Immediately probe — detect if already playing (cookie consent delay)
         setTimeout(() => {
             if (iframe) iframe.contentWindow.postMessage(JSON.stringify({
                 context: 'player.js', version, method: 'getCurrentTime'
-            }), PLAYER_ORIGIN);
+            }), origin);
         }, 300);
     }
 
@@ -553,7 +524,7 @@ const PLAYER_ORIGIN = 'https://regionsjaelland.23video.com';
         if (!iframe) return;
         iframe.contentWindow.postMessage(JSON.stringify({
             context: 'player.js', version: '0.0.12', method: 'setVolume', value: level
-        }), PLAYER_ORIGIN);
+        }), 'https://regionsjaelland.23video.com');
     }
 
     function toggleTTS() {
