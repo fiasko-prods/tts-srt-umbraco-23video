@@ -39,7 +39,7 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
+const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || '';
 const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
 
 // =====================================================
