@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.28e
+// Version: 1.30
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -412,7 +412,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                     // Always re-subscribe on genuine ready — player may have restarted
                     // (this is the key fix: cookie consent causes player to reinitialize)
                     if (isGenuineReady || !wasReady) {
-                        console.log('✅ Player ready — subscribing' + (wasReady ? ' (re-subscribe)' : ''));
                         subscribeToEvents();
                     }
                 }
@@ -477,7 +476,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                     if (!hasReceivedPlayEvent && !isVideoPlaying && currentTime > 0) {
                         hasReceivedPlayEvent = true;
                         isVideoPlaying = true;
-                        console.log('▶ Detected already-playing at t:' + currentTime.toFixed(2));
                         if (document.getElementById('video-status'))
                             document.getElementById('video-status').textContent = CFG.playing;
                     }
@@ -732,19 +730,16 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     async function init() {
         // Log SRT content for debugging
-        console.log('📄 SRT length:' + SUBTITLES_SRT.length + ' | first 80 chars: ' + SUBTITLES_SRT.substring(0, 80).replace(/\n/g, '↵'));
 
         // Wait for iframe — use MutationObserver so cookie consent delay doesn't matter
         iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
         if (!iframe) {
-            console.log('⏳ iframe not found yet — waiting via MutationObserver...');
             await new Promise(resolve => {
                 const observer = new MutationObserver(() => {
                     const found = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
                     if (found) {
                         iframe = found;
                         observer.disconnect();
-                        console.log('✅ iframe appeared after cookie consent');
                         resolve();
                     }
                 });
@@ -763,7 +758,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!iframe) return;
 
         subtitles = parseSRT(SUBTITLES_SRT);
-        console.log('✅ iframe found | subs:' + subtitles.length);
         createUI();
         injectToggleButton();
         if (playerReady) subscribeToEvents();
