@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.28d
+// Version: 1.28e
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -39,7 +39,7 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
 const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
 
 // =====================================================
