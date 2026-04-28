@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.30b
+// Version: 1.31
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -84,7 +84,7 @@ const LANGUAGE_CONFIGS = {
         voiceWarning: '⚠️ Deutsche Sprachausgabe ist auf Ihrem Gerät nicht installiert. Gehen Sie zu Einstellungen → Bedienungshilfen → Text-to-Speech → und installieren Sie Deutsch.',
     },
     ar: {
-        lang: 'ar-SA', langAlt: 'ar',
+        lang: 'ar-SA', langAlt: 'ar', langAlt2: 'ar-XA', langSpeak: 'ar',
         labelOn:  'إيقاف قارئ الترجمة العربية',
         labelOff: 'تفعيل قارئ الترجمة العربية',
         speed: 'السرعة', pitch: 'طبقة الصوت', volume: 'مستوى الصوت',
@@ -186,8 +186,13 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     function getVoice() {
         if (!availableVoices.length) return null;
+        // 1. Exact match
         let v = availableVoices.find(v => v.lang === CFG.lang);
+        // 2. Prefix match e.g. ar- matches ar-SA, ar-XA
         if (!v) v = availableVoices.find(v => v.lang.startsWith(CFG.langAlt + '-') || v.lang === CFG.langAlt);
+        // 3. langAlt2 — e.g. ar-XA for Chrome Arabic
+        if (!v && CFG.langAlt2) v = availableVoices.find(v => v.lang === CFG.langAlt2);
+        // 4. Name match
         if (!v) v = availableVoices.find(v =>
             v.name.toLowerCase().includes(CFG.langAlt.toLowerCase()) ||
             v.name.toLowerCase().includes(CFG.lang.toLowerCase())
@@ -243,7 +248,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             const utterance = new SpeechSynthesisUtterance(text);
             const voice = getVoice();
             if (voice) utterance.voice = voice;
-            utterance.lang   = CFG.lang;
+            utterance.lang   = CFG.langSpeak || CFG.lang;
             utterance.rate   = rate;
             utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
             utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -572,7 +577,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 const u = new SpeechSynthesisUtterance(text);
                 const v = getVoice();
                 if (v) u.voice = v;
-                u.lang   = CFG.lang;
+                u.lang   = CFG.langSpeak || CFG.lang;
                 u.rate   = rate;
                 u.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
                 u.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -668,7 +673,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     function createUI() {
 
         const container = document.createElement('div');
-        container.setAttribute('data-tts-reader', '1');
         container.style.cssText = 'margin:2rem 0;padding:2rem;border:2px solid #0066cc;border-radius:8px;background:white;font-family:system-ui;';
         container.innerHTML = `
             <div style="padding:1rem;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:8px;margin-bottom:1.5rem;">
