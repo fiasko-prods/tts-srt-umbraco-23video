@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.33
+// Version: 1.28
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -29,8 +29,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
         const el = document.getElementById(id);
         if (el) el.remove();
     });
-    // Clear previous poll interval
-    if (window._ttsPollInterval) { clearInterval(window._ttsPollInterval); window._ttsPollInterval = null; }
+    // Remove any container divs we injected (identified by border color)
+    document.querySelectorAll('[data-tts-reader]').forEach(el => el.remove());
     // Remove previous message listener — stored on window
     if (window._ttsMessageHandler) {
         window.removeEventListener('message', window._ttsMessageHandler);
@@ -84,7 +84,7 @@ const LANGUAGE_CONFIGS = {
         voiceWarning: '⚠️ Deutsche Sprachausgabe ist auf Ihrem Gerät nicht installiert. Gehen Sie zu Einstellungen → Bedienungshilfen → Text-to-Speech → und installieren Sie Deutsch.',
     },
     ar: {
-        lang: 'ar-SA', langAlt: 'ar', langAlt2: 'ar-XA', langSpeak: 'ar',
+        lang: 'ar-SA', langAlt: 'ar',
         labelOn:  'إيقاف قارئ الترجمة العربية',
         labelOff: 'تفعيل قارئ الترجمة العربية',
         speed: 'السرعة', pitch: 'طبقة الصوت', volume: 'مستوى الصوت',
@@ -186,13 +186,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     function getVoice() {
         if (!availableVoices.length) return null;
-        // 1. Exact match
         let v = availableVoices.find(v => v.lang === CFG.lang);
-        // 2. Prefix match e.g. ar- matches ar-SA, ar-XA
         if (!v) v = availableVoices.find(v => v.lang.startsWith(CFG.langAlt + '-') || v.lang === CFG.langAlt);
-        // 3. langAlt2 — e.g. ar-XA for Chrome Arabic
-        if (!v && CFG.langAlt2) v = availableVoices.find(v => v.lang === CFG.langAlt2);
-        // 4. Name match
         if (!v) v = availableVoices.find(v =>
             v.name.toLowerCase().includes(CFG.langAlt.toLowerCase()) ||
             v.name.toLowerCase().includes(CFG.lang.toLowerCase())
@@ -248,7 +243,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             const utterance = new SpeechSynthesisUtterance(text);
             const voice = getVoice();
             if (voice) utterance.voice = voice;
-            utterance.lang   = CFG.langSpeak || CFG.lang;
+            utterance.lang   = CFG.lang;
             utterance.rate   = rate;
             utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
             utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -295,7 +290,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         const utterance = new SpeechSynthesisUtterance(text);
         const voice = getVoice();
         if (voice) utterance.voice = voice;
-        utterance.lang   = CFG.langSpeak || CFG.lang;
+        utterance.lang   = CFG.lang;
         utterance.rate   = rate;
         utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
         utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -417,6 +412,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                     // Always re-subscribe on genuine ready — player may have restarted
                     // (this is the key fix: cookie consent causes player to reinitialize)
                     if (isGenuineReady || !wasReady) {
+                        console.log('✅ Player ready — subscribing' + (wasReady ? ' (re-subscribe)' : ''));
                         subscribeToEvents();
                     }
                 }
@@ -481,6 +477,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                     if (!hasReceivedPlayEvent && !isVideoPlaying && currentTime > 0) {
                         hasReceivedPlayEvent = true;
                         isVideoPlaying = true;
+                        console.log('▶ Detected already-playing at t:' + currentTime.toFixed(2));
                         if (document.getElementById('video-status'))
                             document.getElementById('video-status').textContent = CFG.playing;
                     }
@@ -505,7 +502,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             if (!iframe) {
                 clearInterval(pollInterval);
                 pollInterval = null;
-                window._ttsPollInterval = null;
                 return;
             }
             iframe.contentWindow.postMessage(JSON.stringify({
@@ -513,7 +509,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
-        window._ttsPollInterval = pollInterval;
         window.addEventListener('beforeunload', () => { clearInterval(pollInterval); pollInterval = null; }, { once: true });
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
 
@@ -579,7 +574,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 const u = new SpeechSynthesisUtterance(text);
                 const v = getVoice();
                 if (v) u.voice = v;
-                u.lang   = CFG.langSpeak || CFG.lang;
+                u.lang   = CFG.lang;
                 u.rate   = rate;
                 u.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
                 u.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -672,20 +667,84 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         checkVoiceWarning();
     }
 
+    function createUI() {
 
+        const container = document.createElement('div');
+        container.setAttribute('data-tts-reader', '1');
+        container.style.cssText = 'margin:2rem 0;padding:2rem;border:2px solid #0066cc;border-radius:8px;background:white;font-family:system-ui;';
+        container.innerHTML = `
+            <div style="padding:1rem;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:8px;margin-bottom:1.5rem;">
+                <div style="display:flex;justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem;opacity:0.9;">${CFG.statusLabel}</div>
+                        <div id="video-status" style="font-size:1.2rem;font-weight:bold;">${CFG.paused}</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:0.85rem;opacity:0.9;">${CFG.subtitleLabel}</div>
+                        <div id="subtitle-counter" style="font-size:1.2rem;font-weight:bold;">0 / ${subtitles.length}</div>
+                    </div>
+                </div>
+            </div>
+            <div id="current-subtitle" style="padding:2rem;background:#1a1a1a;color:#fff;border-radius:8px;
+                min-height:120px;font-size:1.3rem;text-align:center;margin-bottom:1.5rem;
+                display:flex;align-items:center;justify-content:center;">
+                <p style="margin:0;opacity:0.6;">${CFG.waiting}</p>
+            </div>
+            <div style="padding:1rem;background:#f8f9fa;border-radius:8px;margin-bottom:1rem;">
+                <div style="margin-bottom:0.75rem;">
+                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
+                        ${CFG.speed}: <span id="rate-value">1.2x</span>
+                    </label>
+                    <input type="range" id="rate-slider" min="0.5" max="2" step="0.1" value="1.2" style="width:100%;">
+                </div>
+                <div style="margin-bottom:0.75rem;">
+                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
+                        ${CFG.pitch}: <span id="pitch-value">1.0x</span>
+                    </label>
+                    <input type="range" id="pitch-slider" min="0.5" max="2" step="0.1" value="1.0" style="width:100%;">
+                </div>
+                <div>
+                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
+                        ${CFG.volume}: <span id="volume-value">150%</span>
+                    </label>
+                    <input type="range" id="volume-slider" min="0" max="2" step="0.1" value="1.5" style="width:100%;">
+                </div>
+                <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #dee2e6;">
+                    <label style="display:flex;align-items:center;cursor:pointer;font-weight:600;">
+                        <input type="checkbox" id="fast-mode" style="margin-right:0.5rem;width:18px;height:18px;cursor:pointer;">
+                        ${CFG.turbo}
+                    </label>
+                    <p style="margin:0.5rem 0 0 0;font-size:0.85rem;color:#666;">${CFG.turboHint}</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(container);
+        document.getElementById('rate-slider').addEventListener('input', e => {
+            document.getElementById('rate-value').textContent = e.target.value + 'x';
+        });
+        document.getElementById('pitch-slider').addEventListener('input', e => {
+            document.getElementById('pitch-value').textContent = e.target.value + 'x';
+        });
+        document.getElementById('volume-slider').addEventListener('input', e => {
+            document.getElementById('volume-value').textContent = Math.round(e.target.value * 100) + '%';
+        });
+    }
 
     async function init() {
         // Log SRT content for debugging
+        console.log('📄 SRT length:' + SUBTITLES_SRT.length + ' | first 80 chars: ' + SUBTITLES_SRT.substring(0, 80).replace(/\n/g, '↵'));
 
         // Wait for iframe — use MutationObserver so cookie consent delay doesn't matter
         iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
         if (!iframe) {
+            console.log('⏳ iframe not found yet — waiting via MutationObserver...');
             await new Promise(resolve => {
                 const observer = new MutationObserver(() => {
                     const found = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
                     if (found) {
                         iframe = found;
                         observer.disconnect();
+                        console.log('✅ iframe appeared after cookie consent');
                         resolve();
                     }
                 });
@@ -704,9 +763,9 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!iframe) return;
 
         subtitles = parseSRT(SUBTITLES_SRT);
+        console.log('✅ iframe found | subs:' + subtitles.length);
+        createUI();
         injectToggleButton();
-        // Set volume immediately so player never plays at 100% while TTS is on
-        setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
         if (playerReady) subscribeToEvents();
     }
 
