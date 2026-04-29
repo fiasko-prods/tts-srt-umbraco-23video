@@ -1,8 +1,8 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.34
-// Author: Marco Iovane @regionsjaelland.dk
+// Version: 1.34b
+// Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
 // ┌─────────────────────────────────────────────────┐
@@ -39,8 +39,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || 'da';
-const SUBTITLES_SRT = SRT_SUBTITLES_ARG || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
+const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -623,8 +623,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 -webkit-text-stroke:0.1px #00809c;
                 letter-spacing:1px; line-height:1;
                 font-family:Arial,sans-serif; box-sizing:border-box;
-                opacity:${isIOS ? '0.3' : '1'};
-                filter:${isIOS ? 'grayscale(100%)' : 'none'};">
+                opacity:${isIOS ? '0.3' : (ttsEnabled ? '1' : '0.3')};
+                filter:${isIOS ? 'grayscale(100%)' : (ttsEnabled ? 'none' : 'grayscale(100%)')};">
                 A&nbsp;ع&nbsp;あ
                 <span style="position:absolute;bottom:-9px;left:12px;width:0;height:0;
                     border-left:6px solid transparent;border-right:6px solid transparent;
@@ -635,9 +635,9 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             </div>
             <span id="tts-toggle-label" style="
                 font-size:2rem; font-weight:700; color:#00809c;
-                opacity:${isIOS ? '0.45' : '1'};
+                opacity:${isIOS ? '0.45' : (ttsEnabled ? '1' : '0.45')};
                 transition:opacity 0.2s;">
-                ${isIOS ? CFG.labelOff : CFG.labelOn}
+                ${(isIOS || !ttsEnabled) ? CFG.labelOff : CFG.labelOn}
             </span>
         `;
 
