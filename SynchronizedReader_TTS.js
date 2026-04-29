@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.33b-debug2
+// Version: 1.33b
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -39,8 +39,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || 'da';
-const SUBTITLES_SRT = SRT_SUBTITLES_ARG || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
+const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -168,20 +168,10 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (isIOS) return;
         if (!availableVoices.length) return; // not loaded yet
         const voice = getVoice();
-        if (voice) return; // correct voice found — nothing to do
-        // No matching voice — show warning and disable
-        const el    = document.getElementById('tts-voice-warning');
-        const icon  = document.getElementById('tts-bubble-icon');
-        const label = document.getElementById('tts-toggle-label');
-        if (el)    el.style.display = 'block';
-        if (ttsEnabled) {
-            ttsEnabled = false;
-            speechSynthesis.cancel();
-            speakGeneration++;
-            if (icon)  { icon.style.opacity = '0.3'; icon.style.filter = 'grayscale(100%)'; }
-            if (label) { label.style.opacity = '0.45'; label.textContent = CFG.labelOff; }
-            setPlayerVolume(VOL_TTS_OFF);
-        }
+        if (voice) return;
+        // No matching voice — show warning but keep TTS enabled so browser can try anyway
+        const el = document.getElementById('tts-voice-warning');
+        if (el) el.style.display = 'block';
     }
 
     function getVoice() {
@@ -336,7 +326,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             postSeekCooldown = false;
         };
 
-        console.log('🗣 speak:"'+text.substring(0,20)+'" voice:'+(utterance.voice?utterance.voice.name:'none')+' lang:'+utterance.lang);
         speechSynthesis.speak(utterance);
     }
 
@@ -709,35 +698,9 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
         subtitles = parseSRT(SUBTITLES_SRT);
         injectToggleButton();
-        injectLogPanel();
         // Set volume immediately so player never plays at 100% while TTS is on
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
         if (playerReady) subscribeToEvents();
-    }
-
-    function injectLogPanel() {
-        const p = document.createElement('div');
-        p.id = 'tts-log-panel';
-        p.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:35vh;overflow-y:auto;background:rgba(0,0,0,0.93);color:#0f0;font-family:monospace;font-size:12px;padding:0.4rem;z-index:99999;border-top:3px solid #00809c;box-sizing:border-box;';
-        const bar = document.createElement('div');
-        bar.style.cssText = 'position:sticky;top:0;background:#111;padding:3px;display:flex;gap:5px;flex-wrap:wrap;margin-bottom:3px;';
-        const status = document.createElement('div');
-        status.id='tts-ls'; status.style.cssText='width:100%;font-size:10px;color:#ff0;padding:1px 0;';
-        setInterval(()=>{const s=document.getElementById('tts-ls');if(s)s.textContent='play:'+isVideoPlaying+' tts:'+ttsEnabled+' spk:'+currentlySpeaking+' sub:'+currentSubtitleIndex+' t:'+lastKnownTime.toFixed(1)+' lang:'+LANGUAGE+' voices:'+availableVoices.length+' voice:'+(getVoice()?getVoice().name:'none');},500);
-        const cp=document.createElement('button');cp.textContent='📋 Copy';cp.style.cssText='background:#00809c;color:#fff;border:none;padding:6px 10px;cursor:pointer;font-size:12px;border-radius:3px;flex:1;min-height:36px;';
-        cp.onclick=()=>{const t=Array.from(ll.children).map(l=>l.textContent).join('\n');navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>{cp.textContent='✅';setTimeout(()=>cp.textContent='📋 Copy',2000);});};
-        const cl=document.createElement('button');cl.textContent='✕';cl.style.cssText='background:#333;color:#fff;border:none;padding:6px 10px;cursor:pointer;font-size:12px;border-radius:3px;min-height:36px;';cl.onclick=()=>ll.innerHTML='';
-        bar.appendChild(status);bar.appendChild(cp);bar.appendChild(cl);p.appendChild(bar);
-        const ll=document.createElement('div');p.appendChild(ll);document.body.appendChild(p);
-        const orig=console.log.bind(console);
-        console.log=function(){orig.apply(console,arguments);
-            const msg=Array.from(arguments).map(a=>typeof a==='object'?JSON.stringify(a):String(a)).join(' ');
-            const ln=document.createElement('div');
-            let col='#0f0';if(msg.includes('❌'))col='#f44';else if(msg.includes('⏸')||msg.includes('pause'))col='#fa0';else if(msg.includes('▶')||msg.includes('play'))col='#4f4';else if(msg.includes('🗣')||msg.includes('speak'))col='#4af';
-            ln.style.cssText='border-bottom:1px solid #1a1a1a;padding:1px 0;word-break:break-all;color:'+col+';';
-            ln.textContent=new Date().toLocaleTimeString('da-DK',{hour12:false})+'  '+msg;
-            ll.appendChild(ln);while(ll.children.length>150)ll.removeChild(ll.firstChild);p.scrollTop=p.scrollHeight;};
-        console.log('📋 1.33b | lang:'+LANGUAGE+' | isIOS:'+isIOS+' | subs:'+subtitles.length);
     }
 
     if (document.readyState === 'loading') {
