@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.33b-debug
+// Version: 1.33b-debug2
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -192,11 +192,11 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!v) v = availableVoices.find(v => v.lang.startsWith(CFG.langAlt + '-') || v.lang === CFG.langAlt);
         // 3. langAlt2 — e.g. ar-XA for Chrome Arabic
         if (!v && CFG.langAlt2) v = availableVoices.find(v => v.lang === CFG.langAlt2);
-        // 4. Name match
-        if (!v) v = availableVoices.find(v =>
-            v.name.toLowerCase().includes(CFG.langAlt.toLowerCase()) ||
-            v.name.toLowerCase().includes(CFG.lang.toLowerCase())
-        );
+        // 4. Name match — use word boundary so e.g. 'ar' doesn't match 'Denmark'
+        if (!v) v = availableVoices.find(v => {
+            const re = new RegExp('\\b' + CFG.langAlt, 'i');
+            return re.test(v.name) || v.name.toLowerCase().includes(CFG.lang.toLowerCase());
+        });
         return v || null;
     }
 
