@@ -1,8 +1,8 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.33b
-// Author: Marco Iovane maiov@regionsjaelland.dk
+// Version: 1.34
+// Author: Marco Iovane @regionsjaelland.dk
 // =====================================================
 //
 // ┌─────────────────────────────────────────────────┐
@@ -39,8 +39,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
-const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || 'da';
+const SUBTITLES_SRT = SRT_SUBTITLES_ARG || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -148,7 +148,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
     let speakGeneration      = 0;
     let hasReceivedPlayEvent = false; // guards getCurrentTime from overriding pause state
 
-    const VOL_TTS_ON  = isIOS ? 30 : 10;
+    const VOL_TTS_ON  = 0; // mute player while TTS is speaking
     const VOL_TTS_OFF = 100;
 
     window._ttsMessageHandler = handlePlayerMessage;
@@ -169,9 +169,20 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!availableVoices.length) return; // not loaded yet
         const voice = getVoice();
         if (voice) return;
-        // No matching voice — show warning but keep TTS enabled so browser can try anyway
-        const el = document.getElementById('tts-voice-warning');
+        // No matching voice — show warning and disable button on desktop/Android
+        // User can still tap to re-enable and browser will try fallback voice
+        const el    = document.getElementById('tts-voice-warning');
+        const icon  = document.getElementById('tts-bubble-icon');
+        const label = document.getElementById('tts-toggle-label');
         if (el) el.style.display = 'block';
+        if (!isIOS && ttsEnabled) {
+            ttsEnabled = false;
+            speechSynthesis.cancel();
+            speakGeneration++;
+            if (icon)  { icon.style.opacity = '0.3'; icon.style.filter = 'grayscale(100%)'; }
+            if (label) { label.style.opacity = '0.45'; label.textContent = CFG.labelOff; }
+            setPlayerVolume(VOL_TTS_OFF);
+        }
     }
 
     function getVoice() {
