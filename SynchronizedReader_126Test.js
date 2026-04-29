@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 126TestB
+// Version: 1.33b-debug
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -24,13 +24,13 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
 
     // ── Cleanup previous instance ─────────────────────────────────────────
     // Remove DOM elements from previous page
-    ['tts-toggle-wrapper', 'tts-voice-warning', 'tts-log-panel',
+    ['tts-toggle-wrapper', 'tts-voice-warning',
      'tts-log-container', 'tts-ui-container'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.remove();
     });
-    // Remove any container divs we injected (identified by border color)
-    document.querySelectorAll('[data-tts-reader]').forEach(el => el.remove());
+    // Clear previous poll interval
+    if (window._ttsPollInterval) { clearInterval(window._ttsPollInterval); window._ttsPollInterval = null; }
     // Remove previous message listener — stored on window
     if (window._ttsMessageHandler) {
         window.removeEventListener('message', window._ttsMessageHandler);
@@ -39,8 +39,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
-const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || 'da';
+const SUBTITLES_SRT = SRT_SUBTITLES_ARG || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -84,7 +84,7 @@ const LANGUAGE_CONFIGS = {
         voiceWarning: '⚠️ Deutsche Sprachausgabe ist auf Ihrem Gerät nicht installiert. Gehen Sie zu Einstellungen → Bedienungshilfen → Text-to-Speech → und installieren Sie Deutsch.',
     },
     ar: {
-        lang: 'ar-SA', langAlt: 'ar',
+        lang: 'ar-SA', langAlt: 'ar', langAlt2: 'ar-XA', langSpeak: 'ar',
         labelOn:  'إيقاف قارئ الترجمة العربية',
         labelOff: 'تفعيل قارئ الترجمة العربية',
         speed: 'السرعة', pitch: 'طبقة الصوت', volume: 'مستوى الصوت',
@@ -186,12 +186,17 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     function getVoice() {
         if (!availableVoices.length) return null;
+        // 1. Exact match
         let v = availableVoices.find(v => v.lang === CFG.lang);
+        // 2. Prefix match e.g. ar- matches ar-SA, ar-XA
         if (!v) v = availableVoices.find(v => v.lang.startsWith(CFG.langAlt + '-') || v.lang === CFG.langAlt);
-        if (!v) v = availableVoices.find(v =>
-            v.name.toLowerCase().includes(CFG.langAlt.toLowerCase()) ||
-            v.name.toLowerCase().includes(CFG.lang.toLowerCase())
-        );
+        // 3. langAlt2 — e.g. ar-XA for Chrome Arabic
+        if (!v && CFG.langAlt2) v = availableVoices.find(v => v.lang === CFG.langAlt2);
+        // 4. Name match — use word boundary so e.g. 'ar' doesn't match 'Denmark'
+        if (!v) v = availableVoices.find(v => {
+            const re = new RegExp('\\b' + CFG.langAlt, 'i');
+            return re.test(v.name) || v.name.toLowerCase().includes(CFG.lang.toLowerCase());
+        });
         return v || null;
     }
 
@@ -242,8 +247,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             const voice = getVoice();
-            if (voice) utterance.voice = voice;
-            utterance.lang   = CFG.lang;
+            if (voice && voice.lang.startsWith(CFG.langAlt)) utterance.voice = voice;
+            utterance.lang   = CFG.langSpeak || CFG.lang;
             utterance.rate   = rate;
             utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
             utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -289,8 +294,11 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
         const utterance = new SpeechSynthesisUtterance(text);
         const voice = getVoice();
-        if (voice) utterance.voice = voice;
-        utterance.lang   = CFG.lang;
+        // Only set voice if it confidently matches the language — Chrome Arabic silently
+        // fails when utterance.voice is set to a mismatched or online-only voice.
+        // Leaving voice unset lets the browser engine pick the best match for utterance.lang.
+        if (voice && voice.lang.startsWith(CFG.langAlt)) utterance.voice = voice;
+        utterance.lang   = CFG.langSpeak || CFG.lang;
         utterance.rate   = rate;
         utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
         utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -328,6 +336,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             postSeekCooldown = false;
         };
 
+        console.log('🗣 speak:"'+text.substring(0,20)+'" voice:'+(utterance.voice?utterance.voice.name:'none')+' lang:'+utterance.lang);
         speechSynthesis.speak(utterance);
     }
 
@@ -412,7 +421,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                     // Always re-subscribe on genuine ready — player may have restarted
                     // (this is the key fix: cookie consent causes player to reinitialize)
                     if (isGenuineReady || !wasReady) {
-                        console.log('✅ Player ready — subscribing' + (wasReady ? ' (re-subscribe)' : ''));
                         subscribeToEvents();
                     }
                 }
@@ -433,8 +441,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 isVideoPlaying = true;
                 if (document.getElementById('video-status'))
                     document.getElementById('video-status').textContent = CFG.playing;
-                console.log('▶ play event');
-                break;
+                        break;
             case 'pause':
                 hasReceivedPlayEvent = true;
                 isVideoPlaying = false;
@@ -446,8 +453,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 justSeeked = false;
                 postSeekCooldown = false;
                 iosSpeakUntil = 0;
-                console.log('⏸ pause event');
-                break;
+                        break;
             case 'ended':
                 hasReceivedPlayEvent = true;
                 isVideoPlaying = false;
@@ -479,7 +485,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                     if (!hasReceivedPlayEvent && !isVideoPlaying && currentTime > 0) {
                         hasReceivedPlayEvent = true;
                         isVideoPlaying = true;
-                        console.log('▶ Detected already-playing at t:' + currentTime.toFixed(2));
                         if (document.getElementById('video-status'))
                             document.getElementById('video-status').textContent = CFG.playing;
                     }
@@ -504,6 +509,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             if (!iframe) {
                 clearInterval(pollInterval);
                 pollInterval = null;
+                window._ttsPollInterval = null;
                 return;
             }
             iframe.contentWindow.postMessage(JSON.stringify({
@@ -511,6 +517,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             }), origin);
             if (ttsEnabled) setPlayerVolume(VOL_TTS_ON);
         }, 1000);
+        window._ttsPollInterval = pollInterval;
         window.addEventListener('beforeunload', () => { clearInterval(pollInterval); pollInterval = null; }, { once: true });
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
 
@@ -520,7 +527,6 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 context: 'player.js', version, method: 'getCurrentTime'
             }), origin);
         }, 300);
-        console.log('✅ Subscribed to player events');
     }
 
     function setPlayerVolume(level) {
@@ -576,8 +582,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 const rate = Math.max(parseFloat(document.getElementById('rate-slider')?.value || 1.2) * 0.95, 0.5);
                 const u = new SpeechSynthesisUtterance(text);
                 const v = getVoice();
-                if (v) u.voice = v;
-                u.lang   = CFG.lang;
+                if (v && v.lang.startsWith(CFG.langAlt)) u.voice = v;
+                u.lang   = CFG.langSpeak || CFG.lang;
                 u.rate   = rate;
                 u.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
                 u.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -670,152 +676,20 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         checkVoiceWarning();
     }
 
-    function createUI() {
-        // ── On-screen log panel ──
-        const logPanel = document.createElement('div');
-        logPanel.id = 'tts-log-panel';
-        logPanel.setAttribute('data-tts-reader', '1');
-        logPanel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:40vh;overflow-y:auto;background:rgba(0,0,0,0.92);color:#0f0;font-family:monospace;font-size:12px;padding:0.5rem;z-index:99999;border-top:3px solid #00809c;box-sizing:border-box;';
-        const toolbar = document.createElement('div');
-        toolbar.style.cssText = 'position:sticky;top:0;background:#111;padding:4px;display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap;';
-        const statusBar = document.createElement('div');
-        statusBar.id = 'tts-log-status';
-        statusBar.style.cssText = 'width:100%;font-size:11px;color:#ff0;padding:2px 0;';
-        statusBar.textContent = 'Status: initialising...';
-        const copyBtn = document.createElement('button');
-        copyBtn.textContent = '📋 Copy';
-        copyBtn.style.cssText = 'background:#00809c;color:#fff;border:none;padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px;flex:1;min-height:40px;';
-        copyBtn.onclick = () => {
-            const text = Array.from(logLines.children).map(l => l.textContent).join('\n');
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(() => { copyBtn.textContent = '✅ Copied!'; setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000); });
-            } else {
-                const ta = document.createElement('textarea');
-                ta.value = text; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
-                document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-                copyBtn.textContent = '✅ Copied!'; setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000);
-            }
-        };
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = '✕ Clear';
-        clearBtn.style.cssText = 'background:#333;color:#fff;border:none;padding:8px 12px;cursor:pointer;font-size:13px;border-radius:4px;min-height:40px;';
-        clearBtn.onclick = () => { logLines.innerHTML = ''; };
-        toolbar.appendChild(statusBar);
-        toolbar.appendChild(copyBtn);
-        toolbar.appendChild(clearBtn);
-        logPanel.appendChild(toolbar);
-        const logLines = document.createElement('div');
-        logPanel.appendChild(logLines);
-        document.body.appendChild(logPanel);
 
-        // Live status bar — updates every 500ms showing key state values
-        setInterval(() => {
-            const s = document.getElementById('tts-log-status');
-            if (s) s.textContent =
-                'play:' + isVideoPlaying +
-                ' tts:' + ttsEnabled +
-                ' spk:' + currentlySpeaking +
-                ' sub:' + currentSubtitleIndex +
-                ' t:' + lastKnownTime.toFixed(1) +
-                ' gen:' + speakGeneration +
-                ' hasPlay:' + hasReceivedPlayEvent;
-        }, 500);
-
-        const _origLog = console.log.bind(console);
-        console.log = function() {
-            _origLog.apply(console, arguments);
-            const msg = Array.from(arguments).map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-            const line = document.createElement('div');
-            let color = '#0f0';
-            if (msg.includes('❌')) color = '#f44';
-            else if (msg.includes('⏸') || msg.includes('pause')) color = '#fa0';
-            else if (msg.includes('▶') || msg.includes('play')) color = '#4f4';
-            else if (msg.includes('🗣') || msg.includes('speak')) color = '#4af';
-            else if (msg.includes('⚠')) color = '#fa0';
-            line.style.cssText = 'border-bottom:1px solid #1a1a1a;padding:2px 0;word-break:break-all;color:' + color + ';';
-            line.textContent = new Date().toLocaleTimeString('da-DK',{hour12:false}) + '  ' + msg;
-            logLines.appendChild(line);
-            while (logLines.children.length > 200) logLines.removeChild(logLines.firstChild);
-            logPanel.scrollTop = logPanel.scrollHeight;
-        };
-        console.log('📋 126Test | lang:' + LANGUAGE + ' | isIOS:' + isIOS);
-
-        const container = document.createElement('div');
-        container.setAttribute('data-tts-reader', '1');
-        container.style.cssText = 'margin:2rem 0;padding:2rem;border:2px solid #0066cc;border-radius:8px;background:white;font-family:system-ui;';
-        container.innerHTML = `
-            <div style="padding:1rem;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:8px;margin-bottom:1.5rem;">
-                <div style="display:flex;justify-content:space-between;">
-                    <div>
-                        <div style="font-size:0.85rem;opacity:0.9;">${CFG.statusLabel}</div>
-                        <div id="video-status" style="font-size:1.2rem;font-weight:bold;">${CFG.paused}</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:0.85rem;opacity:0.9;">${CFG.subtitleLabel}</div>
-                        <div id="subtitle-counter" style="font-size:1.2rem;font-weight:bold;">0 / ${subtitles.length}</div>
-                    </div>
-                </div>
-            </div>
-            <div id="current-subtitle" style="padding:2rem;background:#1a1a1a;color:#fff;border-radius:8px;
-                min-height:120px;font-size:1.3rem;text-align:center;margin-bottom:1.5rem;
-                display:flex;align-items:center;justify-content:center;">
-                <p style="margin:0;opacity:0.6;">${CFG.waiting}</p>
-            </div>
-            <div style="padding:1rem;background:#f8f9fa;border-radius:8px;margin-bottom:1rem;">
-                <div style="margin-bottom:0.75rem;">
-                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
-                        ${CFG.speed}: <span id="rate-value">1.2x</span>
-                    </label>
-                    <input type="range" id="rate-slider" min="0.5" max="2" step="0.1" value="1.2" style="width:100%;">
-                </div>
-                <div style="margin-bottom:0.75rem;">
-                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
-                        ${CFG.pitch}: <span id="pitch-value">1.0x</span>
-                    </label>
-                    <input type="range" id="pitch-slider" min="0.5" max="2" step="0.1" value="1.0" style="width:100%;">
-                </div>
-                <div>
-                    <label style="display:block;margin-bottom:0.25rem;font-weight:600;">
-                        ${CFG.volume}: <span id="volume-value">150%</span>
-                    </label>
-                    <input type="range" id="volume-slider" min="0" max="2" step="0.1" value="1.5" style="width:100%;">
-                </div>
-                <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #dee2e6;">
-                    <label style="display:flex;align-items:center;cursor:pointer;font-weight:600;">
-                        <input type="checkbox" id="fast-mode" style="margin-right:0.5rem;width:18px;height:18px;cursor:pointer;">
-                        ${CFG.turbo}
-                    </label>
-                    <p style="margin:0.5rem 0 0 0;font-size:0.85rem;color:#666;">${CFG.turboHint}</p>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(container);
-        document.getElementById('rate-slider').addEventListener('input', e => {
-            document.getElementById('rate-value').textContent = e.target.value + 'x';
-        });
-        document.getElementById('pitch-slider').addEventListener('input', e => {
-            document.getElementById('pitch-value').textContent = e.target.value + 'x';
-        });
-        document.getElementById('volume-slider').addEventListener('input', e => {
-            document.getElementById('volume-value').textContent = Math.round(e.target.value * 100) + '%';
-        });
-    }
 
     async function init() {
         // Log SRT content for debugging
-        console.log('📄 SRT length:' + SUBTITLES_SRT.length + ' | first 80 chars: ' + SUBTITLES_SRT.substring(0, 80).replace(/\n/g, '↵'));
 
         // Wait for iframe — use MutationObserver so cookie consent delay doesn't matter
         iframe = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
         if (!iframe) {
-            console.log('⏳ iframe not found yet — waiting via MutationObserver...');
             await new Promise(resolve => {
                 const observer = new MutationObserver(() => {
                     const found = document.querySelector('iframe[src*="23video"], iframe[src*="regionsjaelland"]');
                     if (found) {
                         iframe = found;
                         observer.disconnect();
-                        console.log('✅ iframe appeared after cookie consent');
                         resolve();
                     }
                 });
@@ -834,10 +708,36 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         if (!iframe) return;
 
         subtitles = parseSRT(SUBTITLES_SRT);
-        console.log('✅ iframe found | subs:' + subtitles.length);
-        createUI();
         injectToggleButton();
+        injectLogPanel();
+        // Set volume immediately so player never plays at 100% while TTS is on
+        setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
         if (playerReady) subscribeToEvents();
+    }
+
+    function injectLogPanel() {
+        const p = document.createElement('div');
+        p.id = 'tts-log-panel';
+        p.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:35vh;overflow-y:auto;background:rgba(0,0,0,0.93);color:#0f0;font-family:monospace;font-size:12px;padding:0.4rem;z-index:99999;border-top:3px solid #00809c;box-sizing:border-box;';
+        const bar = document.createElement('div');
+        bar.style.cssText = 'position:sticky;top:0;background:#111;padding:3px;display:flex;gap:5px;flex-wrap:wrap;margin-bottom:3px;';
+        const status = document.createElement('div');
+        status.id='tts-ls'; status.style.cssText='width:100%;font-size:10px;color:#ff0;padding:1px 0;';
+        setInterval(()=>{const s=document.getElementById('tts-ls');if(s)s.textContent='play:'+isVideoPlaying+' tts:'+ttsEnabled+' spk:'+currentlySpeaking+' sub:'+currentSubtitleIndex+' t:'+lastKnownTime.toFixed(1)+' lang:'+LANGUAGE+' voices:'+availableVoices.length+' voice:'+(getVoice()?getVoice().name:'none');},500);
+        const cp=document.createElement('button');cp.textContent='📋 Copy';cp.style.cssText='background:#00809c;color:#fff;border:none;padding:6px 10px;cursor:pointer;font-size:12px;border-radius:3px;flex:1;min-height:36px;';
+        cp.onclick=()=>{const t=Array.from(ll.children).map(l=>l.textContent).join('\n');navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>{cp.textContent='✅';setTimeout(()=>cp.textContent='📋 Copy',2000);});};
+        const cl=document.createElement('button');cl.textContent='✕';cl.style.cssText='background:#333;color:#fff;border:none;padding:6px 10px;cursor:pointer;font-size:12px;border-radius:3px;min-height:36px;';cl.onclick=()=>ll.innerHTML='';
+        bar.appendChild(status);bar.appendChild(cp);bar.appendChild(cl);p.appendChild(bar);
+        const ll=document.createElement('div');p.appendChild(ll);document.body.appendChild(p);
+        const orig=console.log.bind(console);
+        console.log=function(){orig.apply(console,arguments);
+            const msg=Array.from(arguments).map(a=>typeof a==='object'?JSON.stringify(a):String(a)).join(' ');
+            const ln=document.createElement('div');
+            let col='#0f0';if(msg.includes('❌'))col='#f44';else if(msg.includes('⏸')||msg.includes('pause'))col='#fa0';else if(msg.includes('▶')||msg.includes('play'))col='#4f4';else if(msg.includes('🗣')||msg.includes('speak'))col='#4af';
+            ln.style.cssText='border-bottom:1px solid #1a1a1a;padding:1px 0;word-break:break-all;color:'+col+';';
+            ln.textContent=new Date().toLocaleTimeString('da-DK',{hour12:false})+'  '+msg;
+            ll.appendChild(ln);while(ll.children.length>150)ll.removeChild(ll.firstChild);p.scrollTop=p.scrollHeight;};
+        console.log('📋 1.33b | lang:'+LANGUAGE+' | isIOS:'+isIOS+' | subs:'+subtitles.length);
     }
 
     if (document.readyState === 'loading') {
