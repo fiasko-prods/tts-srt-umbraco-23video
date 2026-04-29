@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.32c
+// Version: 1.33
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -295,7 +295,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         const utterance = new SpeechSynthesisUtterance(text);
         const voice = getVoice();
         if (voice) utterance.voice = voice;
-        utterance.lang   = CFG.lang;
+        utterance.lang   = CFG.langSpeak || CFG.lang;
         utterance.rate   = rate;
         utterance.pitch  = parseFloat(document.getElementById('pitch-slider')?.value || 1.0);
         utterance.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
@@ -705,6 +705,8 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
         subtitles = parseSRT(SUBTITLES_SRT);
         injectToggleButton();
+        // Set volume immediately so player never plays at 100% while TTS is on
+        setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
         if (playerReady) subscribeToEvents();
     }
 
