@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.34b
+// Version: 1.35
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -256,7 +256,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
             const sub = subtitles[currentSubtitleIndex];
             if (sub) {
                 const remainingSecs = Math.max(sub.endTime - lastKnownTime, 0.5);
-                iosSpeakUntil = Date.now() + (remainingSecs * 1000) + 500;
+                iosSpeakUntil = Date.now() + (remainingSecs * 1000) + 1000;
             }
             currentlySpeaking = true;
             utterance.onstart = () => { currentlySpeaking = true; };
@@ -589,7 +589,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
                 u.volume = parseFloat(document.getElementById('volume-slider')?.value || 1.5);
                 const sub = subtitles[activeIdx];
                 const remainingSecs = Math.max(sub.endTime - lastKnownTime, 0.5);
-                iosSpeakUntil = Date.now() + (remainingSecs * 1000) + 500;
+                iosSpeakUntil = Date.now() + (remainingSecs * 1000) + 1000;
                 currentlySpeaking = true;
                 u.onend  = () => { currentlySpeaking = false; };
                 u.onerror = () => { currentlySpeaking = false; iosSpeakUntil = 0; };
