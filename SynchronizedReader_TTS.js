@@ -1,30 +1,30 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.36
+// Version: 1.37
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
 // ┌─────────────────────────────────────────────────┐
 // │              LANGUAGE CONFIGURATION             │
 // ├─────────────────────────────────────────────────┤
-// │  Set LANGUAGE below to one of these codes:     │
+// │  Set LANGUAGE below to one of these codes:      │
 // │                                                 │
-// │  'da'  → Danish       (Dansk)                  │
-// │  'en'  → English      (British)                │
-// │  'de'  → German       (Deutsch)                │
-// │  'ar'  → Arabic       (العربية)                │
-// │  'tr'  → Turkish      (Türkçe)                 │
-// │  'bs'  → Bosnian      (Bosanski)               │
+// │  'da'  → Danish       (Dansk)                   │
+// │  'en'  → English      (British)                 │
+// │  'de'  → German       (Deutsch)                 │
+// │  'ar'  → Arabic       (العربية)                    │
+// │  'tr'  → Turkish      (Türkçe)                  │
+// │  'bs'  → Bosnian      (Bosanski)                │
 // │                                                 │
-// │  Then paste your SRT content below LANGUAGE.   │
+// │  Then paste your SRT content below LANGUAGE.    │
 // └─────────────────────────────────────────────────┘
 
 window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
 
     // ── Cleanup previous instance ─────────────────────────────────────────
     // Remove DOM elements from previous page
-    ['tts-toggle-wrapper', 'tts-voice-warning',
+    ['tts-toggle-wrapper', 'tts-voice-warning', 'tts-safari-itp-warning',
      'tts-log-container', 'tts-ui-container'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.remove();
@@ -58,6 +58,7 @@ const LANGUAGE_CONFIGS = {
         waiting: '▶️ Start videoen...',
         statusLabel: 'Video Status', subtitleLabel: 'Undertekst',
         voiceWarning: '⚠️ Dansk talesyntese er ikke installeret på din enhed. Gå til Indstillinger → Tilgængelighed → Tekst til tale → og installer Dansk.',
+        safariITPWarning: '⚠️ Hvis læseren ikke virker, genindlæs siden og vælg "Reload with Reduced Protection" i Safari.',
     },
     en: {
         lang: 'en-GB', langAlt: 'en',
@@ -70,6 +71,7 @@ const LANGUAGE_CONFIGS = {
         waiting: '▶️ Start the video...',
         statusLabel: 'Video Status', subtitleLabel: 'Subtitle',
         voiceWarning: '⚠️ English text-to-speech is not installed on your device. Go to Settings → Accessibility → Text to Speech → and install English.',
+        safariITPWarning: '⚠️ If the reader doesn\'t work, reload the page and tap "Reload with Reduced Protection" in Safari.',
     },
     de: {
         lang: 'de-DE', langAlt: 'de',
@@ -82,6 +84,7 @@ const LANGUAGE_CONFIGS = {
         waiting: '▶️ Video starten...',
         statusLabel: 'Videostatus', subtitleLabel: 'Untertitel',
         voiceWarning: '⚠️ Deutsche Sprachausgabe ist auf Ihrem Gerät nicht installiert. Gehen Sie zu Einstellungen → Bedienungshilfen → Text-to-Speech → und installieren Sie Deutsch.',
+        safariITPWarning: '⚠️ Wenn der Vorleser nicht funktioniert, laden Sie die Seite neu und tippen Sie in Safari auf "Reload with Reduced Protection".',
     },
     ar: {
         lang: 'ar-SA', langAlt: 'ar', langAlt2: 'ar-XA', langSpeak: 'ar',
@@ -94,6 +97,7 @@ const LANGUAGE_CONFIGS = {
         waiting: '▶️ ابدأ الفيديو...',
         statusLabel: 'حالة الفيديو', subtitleLabel: 'الترجمة',
         voiceWarning: '⚠️ محرك النص إلى كلام للغة العربية غير مثبت على جهازك. انتقل إلى الإعدادات ← إمكانية الوصول ← تحويل النص إلى كلام ← وقم بتثبيت العربية.',
+        safariITPWarning: '⚠️ إذا لم يعمل القارئ، أعد تحميل الصفحة واضغط على "Reload with Reduced Protection" في Safari.',
     },
     tr: {
         lang: 'tr-TR', langAlt: 'tr',
@@ -106,6 +110,7 @@ const LANGUAGE_CONFIGS = {
         waiting: '▶️ Videoyu başlat...',
         statusLabel: 'Video Durumu', subtitleLabel: 'Altyazı',
         voiceWarning: '⚠️ Türkçe metin okuma cihazınızda yüklü değil. Ayarlar → Erişilebilirlik → Metinden Sese → bölümüne gidin ve Türkçeyi yükleyin.',
+        safariITPWarning: '⚠️ Okuyucu çalışmıyorsa, sayfayı yeniden yükleyin ve Safari\'de "Reload with Reduced Protection" seçeneğine dokunun.',
     },
     bs: {
         lang: 'bs-BA', langAlt: 'bs',
@@ -118,6 +123,7 @@ const LANGUAGE_CONFIGS = {
         waiting: '▶️ Pokrenite video...',
         statusLabel: 'Status videa', subtitleLabel: 'Titl',
         voiceWarning: '⚠️ Bosanski govorni sintetizator nije instaliran na vašem uređaju. Idite na Postavke → Pristupačnost → Tekst u govor → i instalirajte bosanski.',
+        safariITPWarning: '⚠️ Ako čitač ne radi, ponovo učitajte stranicu i u Safariju dodirnite "Reload with Reduced Protection".',
     },
 };
 
@@ -674,6 +680,34 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
 
 
+    function injectSafariITPWarning() {
+        if (!isIOS) return;
+        if (!CFG.safariITPWarning) return;
+        const safariVersionMatch = navigator.userAgent.match(/Version\/(\d+)/);
+        const safariMajor = safariVersionMatch ? parseInt(safariVersionMatch[1]) : 0;
+        if (safariMajor < 17) return; // Safari 16 and below works fine
+        // Show warning below the toggle button
+        const existing = document.getElementById('tts-safari-itp-warning');
+        if (existing) return;
+        const warning = document.createElement('p');
+        warning.id = 'tts-safari-itp-warning';
+        warning.style.cssText = [
+            'display:block',
+            'margin:0.5rem 0 0 0',
+            'padding:0.6rem 0.9rem',
+            'background:#fff3cd',
+            'border:1px solid #ffc107',
+            'border-radius:6px',
+            'font-size:0.9rem',
+            'color:#856404',
+            'font-family:system-ui,sans-serif',
+            'max-width:480px'
+        ].join(';');
+        warning.textContent = CFG.safariITPWarning;
+        const btn = document.getElementById('tts-toggle-wrapper');
+        if (btn) btn.insertAdjacentElement('afterend', warning);
+    }
+
     async function init() {
         // Log SRT content for debugging
 
@@ -705,6 +739,7 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
         subtitles = parseSRT(SUBTITLES_SRT);
         injectToggleButton();
+        injectSafariITPWarning();
         // Set volume immediately so player never plays at 100% while TTS is on
         setPlayerVolume(ttsEnabled ? VOL_TTS_ON : VOL_TTS_OFF);
         if (playerReady) subscribeToEvents();
