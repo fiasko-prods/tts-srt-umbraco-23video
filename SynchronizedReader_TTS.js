@@ -1,7 +1,7 @@
 // =====================================================
 // SYNCHRONIZED SUBTITLE READER — UNIVERSAL TEMPLATE
 // Uses 23video postMessage API
-// Version: 1.35
+// Version: 1.36
 // Author: Marco Iovane maiov@regionsjaelland.dk
 // =====================================================
 //
@@ -39,8 +39,8 @@ window.initTTSReader = function(SRT_LANGUAGE_ARG, SRT_SUBTITLES_ARG) {
     // Cancel any pending speech
     try { speechSynthesis.cancel(); } catch(e) {}
 
-const LANGUAGE = SRT_LANGUAGE_ARG || window.SRT_LANGUAGE || 'da';
-const SUBTITLES_SRT = SRT_SUBTITLES_ARG || window.SRT_SUBTITLES || '';
+const LANGUAGE = SRT_LANGUAGE_ARG || 'da';
+const SUBTITLES_SRT = SRT_SUBTITLES_ARG || '';
 
 // =====================================================
 // END OF CONFIGURATION — do not edit below this line
@@ -170,12 +170,12 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
         const voice = getVoice();
         if (voice) return;
         // No matching voice — show warning and disable button on desktop/Android
-        // User can still tap to re-enable and browser will try fallback voice
+        // Update UI regardless of current ttsEnabled state (fixes button showing active when disabled)
         const el    = document.getElementById('tts-voice-warning');
         const icon  = document.getElementById('tts-bubble-icon');
         const label = document.getElementById('tts-toggle-label');
         if (el) el.style.display = 'block';
-        if (!isIOS && ttsEnabled) {
+        if (!isIOS) {
             ttsEnabled = false;
             speechSynthesis.cancel();
             speakGeneration++;
@@ -187,17 +187,13 @@ const CFG = LANGUAGE_CONFIGS[LANGUAGE] || LANGUAGE_CONFIGS['da'];
 
     function getVoice() {
         if (!availableVoices.length) return null;
-        // 1. Exact match
+        // 1. Exact lang match e.g. ar-SA
         let v = availableVoices.find(v => v.lang === CFG.lang);
-        // 2. Prefix match e.g. ar- matches ar-SA, ar-XA
+        // 2. Prefix match e.g. ar- matches ar-SA, ar-XA, ar-EG etc.
         if (!v) v = availableVoices.find(v => v.lang.startsWith(CFG.langAlt + '-') || v.lang === CFG.langAlt);
-        // 3. langAlt2 — e.g. ar-XA for Chrome Arabic
+        // 3. langAlt2 — explicit extra lang code e.g. ar-XA for Chrome
         if (!v && CFG.langAlt2) v = availableVoices.find(v => v.lang === CFG.langAlt2);
-        // 4. Name match — use word boundary so e.g. 'ar' doesn't match 'Denmark'
-        if (!v) v = availableVoices.find(v => {
-            const re = new RegExp('\\b' + CFG.langAlt, 'i');
-            return re.test(v.name) || v.name.toLowerCase().includes(CFG.lang.toLowerCase());
-        });
+        // No name matching — too unreliable across languages (e.g. 'ar' matches 'Denmark')
         return v || null;
     }
 
